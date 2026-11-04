@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Tableau de bord{% endblock %}
+{% block content %}
+<div class="flex flex-wrap items-end justify-between gap-3">
+  <div>
+    <h1 class="text-2xl font-bold">Tableau de bord</h1>
+    <p class="muted text-sm">Situation du {{ today|date }}</p>
+  </div>
+  <div class="flex gap-2 no-print">
+    <a class="btn btn-primary" href="/reservations/new">+ Nouvelle réservation</a>
+    <a class="btn" href="/planning">Planning</a>
+  </div>
+</div>
+
+<section class="grid grid-cols-2 lg:grid-cols-5 gap-3">
+  <div class="card"><div class="muted text-xs">Arrivées du jour</div><div class="stat">{{ arrivals|length }}</div></div>
+  <div class="card"><div class="muted text-xs">Départs du jour</div><div class="stat">{{ departures|length }}</div></div>
+  <div class="card"><div class="muted text-xs">Taux d'occupation</div><div class="stat">{{ occupancy }} %</div></div>
+  <div class="card"><div class="muted text-xs">Chambres à nettoyer</div><div class="stat">{{ counts.get('dirty', 0) }}</div></div>
+  <div class="card"><div class="muted text-xs">Encaissements du jour</div><div class="stat">{{ cash_today|money(s.currency_symbol) }}</div></div>
+</section>
+
+<section class="grid gap-4 lg:grid-cols-3">
+  <div class="card lg:col-span-2">
+    <h2>État des chambres ({{ rooms|length }})</h2>
+    <div class="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-6 gap-2">
+      {% for room in rooms %}
+        {% set occ = occupant_by_room.get(room.id) %}
+        <a href="{{ '/reservations/' ~ occ.id if occ else '/housekeeping' }}" class="room-tile s-{{ room.status }}" style="text-decoration:none;color:inherit">
+          <div class="font-bold">{{ room.number }}</div>
+          <div class="muted text-xs">{{ room.room_type.name }}</div>
+          <div class="text-xs mt-1">{{ ROOM_STATUSES[room.status] }}</div>
+          {% if occ %}<div class="text-xs truncate">{{ occ.guest.last_name }}</div>{% endif %}
+        </a>
+      {% endfor %}
+    </div>
+    <div class="flex flex-wrap gap-2 text-xs mt-3 muted">
+      <span>● Libre</span><span>● Occupée</span><span>● À nettoyer</span><span>● En maintenance</span>
+    </div>
+  </div>
+
+  <div class="space-y-4">
+    <div class="card">
+      <h2>Arrivées prévues ({{ arrivals|length }})</h2>
+      {% if arrivals %}
+      <ul class="space-y-2 text-sm">
+        {% for r in arrivals %}
+          <li class="flex justify-between gap-2">
+            <a href="/reservations/{{ r.id }}">{{ r.guest.full_name }}</a>
+            <span class="muted">{{ r.room.number }} · {{ r.nights }} nuit(s)</span>
+          </li>
+        {% endfor %}
+      </ul>
+      {% else %}<p class="muted text-sm">Aucune arrivée prévue aujourd'hui.</p>{% endif %}
+    </div>
+    <div class="card">
+      <h2>Départs prévus ({{ departures|length }})</h2>
+      {% if departures %}
+      <ul class="space-y-2 text-sm">
+        {% for r in departures %}
+          <li class="flex justify-between gap-2">
+            <a href="/reservations/{{ r.id }}">{{ r.guest.full_name }}</a>
+            <span class="muted">{{ r.room.number }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+      {% else %}<p class="muted text-sm">Aucun départ prévu aujourd'hui.</p>{% endif %}
+    </div>
+    <div class="card">
+      <h2>Séjours en cours ({{ in_house|length }})</h2>
+      <p class="text-sm muted">Hébergés dans l'hôtel à la date du jour.</p>
+    </div>
+  </div>
+</section>
+{% endblock %}

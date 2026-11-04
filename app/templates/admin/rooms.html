@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Administration · Chambres{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold">Administration</h1>
+{% include "admin/_nav.html" %}
+
+<section class="card">
+  <h2>Types de chambres</h2>
+  <div class="table-wrap"><table class="t">
+    <thead><tr><th>Code</th><th>Libellé</th><th>Prix de base TTC / nuit</th><th>Capacité max</th><th></th></tr></thead>
+    <tbody>
+    {% for rt in room_types %}
+      <tr>
+        <td class="font-semibold">{{ rt.code }}</td>
+        <td><input class="inp" form="rt-{{ rt.id }}" name="name" value="{{ rt.name }}"></td>
+        <td><input class="inp" form="rt-{{ rt.id }}" type="number" min="0" name="base_price_ttc" value="{{ rt.base_price_ttc }}"></td>
+        <td><input class="inp" form="rt-{{ rt.id }}" type="number" min="1" name="max_occupancy" value="{{ rt.max_occupancy }}"></td>
+        <td><form id="rt-{{ rt.id }}" method="post" action="/admin/room-types/{{ rt.id }}">
+          <button class="btn btn-sm" type="submit">Enregistrer</button></form></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <form method="post" action="/admin/room-types" class="form-grid mt-4">
+    <label><span class="lbl">Code</span><input class="inp" name="code" required></label>
+    <label><span class="lbl">Libellé</span><input class="inp" name="name" required></label>
+    <label><span class="lbl">Prix TTC / nuit</span><input class="inp" type="number" min="0" name="base_price_ttc" required></label>
+    <label><span class="lbl">Capacité max</span><input class="inp" type="number" min="1" name="max_occupancy" value="2"></label>
+    <div class="flex items-end"><button class="btn btn-primary" type="submit">Ajouter le type</button></div>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Chambres ({{ rooms|length }})</h2>
+  <div class="table-wrap"><table class="t">
+    <thead><tr><th>N°</th><th>Étage</th><th>Type</th><th>Statut</th><th>Notes</th><th></th></tr></thead>
+    <tbody>
+    {% for room in rooms %}
+      <tr>
+        <td><input class="inp" form="room-{{ room.id }}" name="number" value="{{ room.number }}" style="width:6rem"></td>
+        <td><input class="inp" form="room-{{ room.id }}" type="number" name="floor" value="{{ room.floor }}" style="width:5rem"></td>
+        <td><select class="inp" form="room-{{ room.id }}" name="room_type_id">
+          {% for rt in room_types %}<option value="{{ rt.id }}" {{ 'selected' if rt.id == room.room_type_id }}>{{ rt.name }}</option>{% endfor %}
+        </select></td>
+        <td><span class="badge b-grey">{{ ROOM_STATUSES[room.status] }}</span></td>
+        <td><input class="inp" form="room-{{ room.id }}" name="notes" value="{{ room.notes }}"></td>
+        <td class="flex gap-1">
+          <form id="room-{{ room.id }}" method="post" action="/admin/rooms/{{ room.id }}">
+            <button class="btn btn-sm" type="submit">OK</button></form>
+          <form method="post" action="/admin/rooms/{{ room.id }}/delete">
+            <button class="btn btn-sm btn-danger" type="submit" data-confirm="Supprimer la chambre {{ room.number }} ?">✕</button></form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <form method="post" action="/admin/rooms" class="form-grid mt-4">
+    <label><span class="lbl">Numéro</span><input class="inp" name="number" required></label>
+    <label><span class="lbl">Étage</span><input class="inp" type="number" name="floor" value="0"></label>
+    <label><span class="lbl">Type</span>
+      <select class="inp" name="room_type_id" required>
+        {% for rt in room_types %}<option value="{{ rt.id }}">{{ rt.name }}</option>{% endfor %}
+      </select></label>
+    <div class="flex items-end"><button class="btn btn-primary" type="submit">Ajouter la chambre</button></div>
+  </form>
+</section>
+{% endblock %}

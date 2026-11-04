@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Administration · Tarifs{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold">Administration</h1>
+{% include "admin/_nav.html" %}
+
+<section class="card">
+  <h2>Tarifs saisonniers</h2>
+  <p class="muted text-sm mb-3">Un tarif saisonnier remplace le prix de base du type de chambre pendant sa période (date de fin exclue). En cas de chevauchement, la priorité la plus élevée l'emporte. La majoration du week-end et la remise entreprise s'appliquent ensuite.</p>
+  <div class="table-wrap"><table class="t">
+    <thead><tr><th>Libellé</th><th>Type</th><th>Du</th><th>Au (exclu)</th><th class="text-right">Prix TTC / nuit</th><th>Priorité</th><th></th></tr></thead>
+    <tbody>
+    {% for p in periods %}
+      <tr>
+        <td>{{ p.name }}</td><td>{{ p.room_type.name }}</td><td>{{ p.start_date|date }}</td><td>{{ p.end_date|date }}</td>
+        <td class="text-right">{{ p.price_ttc|money(s.currency_symbol) }}</td><td>{{ p.priority }}</td>
+        <td><form method="post" action="/admin/rates/{{ p.id }}/delete">
+          <button class="btn btn-sm btn-danger" type="submit" data-confirm="Supprimer ce tarif ?">✕</button></form></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="muted">Aucun tarif saisonnier : le prix de base s'applique.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <form method="post" action="/admin/rates" class="form-grid mt-4">
+    <label><span class="lbl">Libellé</span><input class="inp" name="name" placeholder="Haute saison été"></label>
+    <label><span class="lbl">Type de chambre</span>
+      <select class="inp" name="room_type_id" required>{% for rt in room_types %}<option value="{{ rt.id }}">{{ rt.name }}</option>{% endfor %}</select></label>
+    <label><span class="lbl">Du</span><input class="inp" type="date" name="start_date" required></label>
+    <label><span class="lbl">Au (exclu)</span><input class="inp" type="date" name="end_date" required></label>
+    <label><span class="lbl">Prix TTC / nuit</span><input class="inp" type="number" min="0" name="price_ttc" required></label>
+    <label><span class="lbl">Priorité</span><input class="inp" type="number" name="priority" value="0"></label>
+    <div class="flex items-end"><button class="btn btn-primary" type="submit">Ajouter le tarif</button></div>
+  </form>
+</section>
+{% endblock %}

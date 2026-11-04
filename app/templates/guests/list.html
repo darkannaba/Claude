@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Clients{% endblock %}
+{% block content %}
+<div class="flex flex-wrap items-end justify-between gap-3">
+  <h1 class="text-2xl font-bold">Clients (CRM)</h1>
+  <a class="btn btn-primary" href="/guests/new">+ Nouveau client</a>
+</div>
+
+<form method="get" action="/guests" class="card no-print flex flex-wrap items-end gap-3">
+  <label class="flex-1 min-w-[16rem]"><span class="lbl">Recherche rapide : nom, téléphone, n° de pièce (ou scanner USB + Entrée)</span>
+    <input class="inp" name="q" value="{{ q }}" data-autofocus autocomplete="off"></label>
+  <button class="btn btn-primary" type="submit">Rechercher</button>
+</form>
+
+<div class="card table-wrap">
+  <table class="t">
+    <thead><tr><th>Nom</th><th>Téléphone</th><th>Nationalité</th><th>Pièce</th><th>Entreprise</th></tr></thead>
+    <tbody>
+    {% for g in guests %}
+      <tr>
+        <td><a href="/guests/{{ g.id }}">{{ g.last_name }} {{ g.first_name }}</a></td>
+        <td>{{ g.phone or '—' }}</td>
+        <td>{{ g.nationality or '—' }}</td>
+        <td>{{ ID_TYPES.get(g.id_type, '') }} <span class="muted">{{ g.id_number }}</span></td>
+        <td>{{ g.company.name if g.company else '—' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">Aucun client trouvé.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

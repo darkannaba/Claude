@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Administration · Paramètres{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold">Administration</h1>
+{% include "admin/_nav.html" %}
+
+<form method="post" action="/admin/settings" class="space-y-4">
+  {% for group, items in groups.items() %}
+  <section class="card">
+    <h2>{{ group }}</h2>
+    <div class="form-grid">
+      {% for item in items %}
+        {% if item.type == 'bool' %}
+          <label class="flex items-start gap-2 text-sm" style="grid-column: 1 / -1">
+            <input type="checkbox" name="s_{{ item.key }}" value="1" class="mt-1" {{ 'checked' if item.value }}>
+            <span>{{ item.label }}</span>
+          </label>
+        {% elif item.type == 'text' %}
+          <label style="grid-column: 1 / -1"><span class="lbl">{{ item.label }}</span>
+            <textarea class="inp" name="s_{{ item.key }}" rows="2">{{ item.value }}</textarea></label>
+        {% else %}
+          <label><span class="lbl">{{ item.label }}</span>
+            <input class="inp" name="s_{{ item.key }}" value="{{ item.value }}" {{ 'type=number' if item.type == 'int' }}></label>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+  <button class="btn btn-primary" type="submit">Enregistrer les paramètres</button>
+</form>
+{% endblock %}

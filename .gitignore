@@ -1,0 +1,15 @@
+# Environnements et caches
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Données locales (base de travail, clé de session, secrets)
+data/hotel.db
+data/.secret_key
+.env
+
+# Fichiers générés
+*.pdf
+*.log

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Administration · Prestations{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold">Administration</h1>
+{% include "admin/_nav.html" %}
+
+<section class="card">
+  <h2>Catalogue des prestations annexes</h2>
+  <p class="muted text-sm mb-3">Les prestations ne sont proposées à la réception que si leur module est activé (Administration &gt; Modules).</p>
+  <div class="table-wrap"><table class="t">
+    <thead><tr><th>Libellé</th><th>Module</th><th>Prix TTC</th><th>Actif</th><th></th></tr></thead>
+    <tbody>
+    {% for item in items %}
+      <tr>
+        <td><input class="inp" form="svc-{{ item.id }}" name="name" value="{{ item.name }}"></td>
+        <td>{{ categories.get(item.category, item.category) }}</td>
+        <td><input class="inp" form="svc-{{ item.id }}" type="number" min="0" name="price_ttc" value="{{ item.price_ttc }}" style="width:9rem"></td>
+        <td><input form="svc-{{ item.id }}" type="checkbox" name="active" value="1" {{ 'checked' if item.active }}></td>
+        <td><form id="svc-{{ item.id }}" method="post" action="/admin/services/{{ item.id }}">
+          <button class="btn btn-sm" type="submit">Enregistrer</button></form></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">Aucune prestation définie.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <form method="post" action="/admin/services" class="form-grid mt-4">
+    <label><span class="lbl">Libellé</span><input class="inp" name="name" required></label>
+    <label><span class="lbl">Module</span>
+      <select class="inp" name="category">{% for k, l in categories.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></label>
+    <label><span class="lbl">Prix TTC</span><input class="inp" type="number" min="0" name="price_ttc" required></label>
+    <div class="flex items-end"><button class="btn btn-primary" type="submit">Ajouter</button></div>
+  </form>
+</section>
+{% endblock %}

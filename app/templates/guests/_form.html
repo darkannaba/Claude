@@ -1,0 +1,26 @@
+{# Formulaire commun création / édition client. Variables : guest (ou None), action, companies, id_types #}
+{% set g = guest %}
+<form method="post" action="{{ action }}" class="card space-y-4">
+  <div class="form-grid">
+    <label><span class="lbl">Nom *</span><input class="inp" name="last_name" required value="{{ g.last_name if g else '' }}"></label>
+    <label><span class="lbl">Prénom *</span><input class="inp" name="first_name" required value="{{ g.first_name if g else '' }}"></label>
+    <label><span class="lbl">Téléphone</span><input class="inp" name="phone" value="{{ g.phone if g else '' }}"></label>
+    <label><span class="lbl">Email</span><input class="inp" type="email" name="email" value="{{ g.email if g else '' }}"></label>
+    <label><span class="lbl">Date de naissance</span><input class="inp" type="date" name="birth_date" value="{{ g.birth_date.isoformat() if g and g.birth_date else '' }}"></label>
+    <label><span class="lbl">Nationalité</span><input class="inp" name="nationality" value="{{ g.nationality if g else '' }}"></label>
+    <label><span class="lbl">Type de pièce</span>
+      <select class="inp" name="id_type">
+        {% for k, l in id_types.items() %}<option value="{{ k }}" {{ 'selected' if g and g.id_type == k }}>{{ l }}</option>{% endfor %}
+      </select></label>
+    <label><span class="lbl">N° de pièce</span><input class="inp" name="id_number" value="{{ g.id_number if g else '' }}" autocomplete="off"></label>
+    <label><span class="lbl">Entreprise (tarif négocié)</span>
+      <select class="inp" name="company_id">
+        <option value="">Aucune</option>
+        {% for c in companies %}<option value="{{ c.id }}" {{ 'selected' if g and g.company_id == c.id }}>{{ c.name }}</option>{% endfor %}
+      </select></label>
+    <label style="grid-column: 1 / -1"><span class="lbl">Adresse</span><textarea class="inp" name="address" rows="2">{{ g.address if g else '' }}</textarea></label>
+    <label style="grid-column: 1 / -1"><span class="lbl">Préférences (oreiller, étage, régime…)</span><textarea class="inp" name="preferences" rows="2">{{ g.preferences if g else '' }}</textarea></label>
+    <label style="grid-column: 1 / -1"><span class="lbl">Notes internes</span><textarea class="inp" name="notes" rows="2">{{ g.notes if g else '' }}</textarea></label>
+  </div>
+  <button class="btn btn-primary" type="submit">Enregistrer</button>
+</form>

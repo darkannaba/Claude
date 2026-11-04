@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Réservations{% endblock %}
+{% block content %}
+<div class="flex flex-wrap items-end justify-between gap-3">
+  <h1 class="text-2xl font-bold">Réservations</h1>
+  <a class="btn btn-primary no-print" href="/reservations/new">+ Nouvelle réservation</a>
+</div>
+
+<form method="get" class="card no-print flex flex-wrap items-end gap-3">
+  <label class="flex-1 min-w-[12rem]"><span class="lbl">Recherche (code, nom, téléphone, pièce)</span>
+    <input class="inp" name="q" value="{{ q }}" data-autofocus></label>
+  <label><span class="lbl">Statut</span>
+    <select class="inp" name="status">
+      <option value="">Tous</option>
+      {% for key, label in STATUS_LABELS.items() %}
+        <option value="{{ key }}" {{ 'selected' if status == key }}>{{ label }}</option>
+      {% endfor %}
+    </select></label>
+  <button class="btn btn-primary" type="submit">Filtrer</button>
+</form>
+
+<div class="card table-wrap">
+  <table class="t">
+    <thead><tr>
+      <th>Code</th><th>Client</th><th>Chambre</th><th>Arrivée</th><th>Départ</th><th>Nuits</th><th>Statut</th>
+    </tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td><a href="/reservations/{{ r.id }}">{{ r.code }}</a></td>
+        <td>{{ r.guest.full_name }}<div class="muted text-xs">{{ r.guest.phone }}</div></td>
+        <td>{{ r.room.number }} <span class="muted text-xs">{{ r.room_type.name }}</span></td>
+        <td>{{ r.check_in|date }}</td>
+        <td>{{ r.check_out|date }}</td>
+        <td>{{ r.nights }}</td>
+        <td><span class="badge {{ 'b-occ' if r.status == 'checked_in' else ('b-free' if r.status == 'confirmed' else 'b-grey') }}">{{ r.status_label }}</span></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="muted">Aucune réservation trouvée.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

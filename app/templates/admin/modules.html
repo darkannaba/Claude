@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Administration · Modules{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold">Administration</h1>
+{% include "admin/_nav.html" %}
+
+<section class="card">
+  <h2>Modules annexes (feature flags)</h2>
+  <p class="muted text-sm mb-3">Chaque module est désactivé par défaut. Un module désactivé n'apparaît pas dans les folios ni dans les choix de prestations.</p>
+  <form method="post" action="/admin/modules" class="space-y-3">
+    {% for f in flags %}
+    <label class="flex items-center justify-between gap-3 card">
+      <span><span class="font-semibold">{{ f.label }}</span> <span class="muted text-xs">({{ f.key }})</span></span>
+      <span class="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="m_{{ f.key }}" value="1" {{ 'checked' if f.enabled }}> {{ 'Activé' if f.enabled else 'Désactivé' }}
+      </span>
+    </label>
+    {% endfor %}
+    <button class="btn btn-primary" type="submit">Enregistrer</button>
+  </form>
+</section>
+{% endblock %}

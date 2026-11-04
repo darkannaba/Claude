@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% block title %}{{ res.code }}{% endblock %}
+{% block content %}
+{% set editable = res.status == 'confirmed' %}
+{% set active = res.status in ('confirmed', 'checked_in') %}
+<div class="flex flex-wrap items-start justify-between gap-3">
+  <div>
+    <div class="muted text-sm"><a href="/reservations">Réservations</a> / {{ res.code }}</div>
+    <h1 class="text-2xl font-bold">
+      <a href="/guests/{{ res.guest.id }}">{{ res.guest.full_name }}</a>
+      <span class="badge {{ 'b-occ' if res.status == 'checked_in' else ('b-free' if res.status == 'confirmed' else 'b-grey') }} align-middle text-sm">{{ res.status_label }}</span>
+    </h1>
+    <p class="muted text-sm">Chambre {{ res.room.number }} · {{ res.room_type.name }} · du {{ res.check_in|date }} au {{ res.check_out|date }} ({{ res.nights }} nuit(s)) · {{ res.adults }} ad. / {{ res.children }} enf.{% if res.company %} · {{ res.company.name }}{% endif %}</p>
+  </div>
+  <div class="flex flex-wrap gap-2 no-print">
+    <a class="btn" href="/reservations/{{ res.id }}/police.pdf" target="_blank">Fiche de police (PDF)</a>
+    <a class="btn" href="/reservations/{{ res.id }}/facture.pdf?format=a4" target="_blank">Facture A4</a>
+    <a class="btn" href="/reservations/{{ res.id }}/facture.pdf?format=ticket" target="_blank">Ticket 80 mm</a>
+  </div>
+</div>
+
+<div class="grid gap-4 lg:grid-cols-3">
+  <div class="space-y-4 lg:col-span-2">
+
+    <section class="card no-print">
+      <h2>Actions</h2>
+      <div class="flex flex-wrap gap-2">
+        {% if res.status == 'confirmed' and today >= res.check_in %}
+          <form method="post" action="/reservations/{{ res.id }}/checkin">
+            <button class="btn btn-ok" type="submit">Arrivée (check-in)</button></form>
+        {% endif %}
+        {% if res.status == 'checked_in' %}
+          <form method="post" action="/reservations/{{ res.id }}/checkout" class="flex flex-wrap items-center gap-2">
+            <label class="text-sm flex items-center gap-1"><input type="checkbox" name="force" value="1"> Départ malgré solde impayé</label>
+            <button class="btn btn-primary" type="submit" data-confirm="Clôturer le séjour et passer la chambre à « À nettoyer » ?">Départ (check-out)</button>
+          </form>
+        {% endif %}
+        {% if res.status == 'confirmed' %}
+          <form method="post" action="/reservations/{{ res.id }}/noshow">
+            <button class="btn" type="submit" data-confirm="Marquer cette réservation en no-show ?">No-show</button></form>
+          <form method="post" action="/reservations/{{ res.id }}/cancel">
+            <button class="btn btn-danger" type="submit" data-confirm="Annuler cette réservation ?">Annuler</button></form>
+        {% endif %}
+      </div>
+
+      {% if active %}
+      <div class="grid gap-4 md:grid-cols-2 mt-4">
+        <form method="post" action="/reservations/{{ res.id }}/room" class="space-y-2">
+          <h3 class="font-semibold text-sm">Changement de chambre</h3>
+          {% if rooms_for_move %}
+          <p class="muted text-xs">Effet à partir du {{ move_from|date }}{% if res.status == 'checked_in' %} (séjour en cours : aujourd'hui){% endif %}.</p>
+          <select class="inp" name="new_room_id" required>
+            {% for r in rooms_for_move %}<option value="{{ r.id }}">{{ r.number }} – {{ r.room_type.name }}</option>{% endfor %}
+          </select>
+          <input type="hidden" name="from_date" value="{{ move_from.isoformat() }}">
+          <button class="btn" type="submit">Changer de chambre</button>
+          {% else %}
+          <p class="muted text-xs">Aucune autre chambre libre sur la suite du séjour.</p>
+          {% endif %}
+        </form>
+
+        {% if editable %}
+        <form method="post" action="/reservations/{{ res.id }}/dates" class="space-y-2">
+          <h3 class="font-semibold text-sm">Modifier dates / chambre</h3>
+          <div class="grid grid-cols-2 gap-2">
+            <input class="inp" type="date" name="check_in" value="{{ res.check_in.isoformat() }}" required>
+            <input class="inp" type="date" name="check_out" value="{{ res.check_out.isoformat() }}" required>
+          </div>
+          <select class="inp" name="room_id">
+            {% for r in all_rooms %}<option value="{{ r.id }}" {{ 'selected' if r.id == res.room_id }}>{{ r.number }} – {{ r.room_type.name }}</option>{% endfor %}
+          </select>
+          <button class="btn" type="submit">Enregistrer</button>
+        </form>
+        {% endif %}
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Occupation des chambres</h2>
+      <table class="t">
+        <thead><tr><th>Chambre</th><th>Du</th><th>Au</th><th>Nuits</th></tr></thead>
+        <tbody>
+        {% for line in folio.room_lines %}
+          <tr><td>{{ line.room }} <span class="muted text-xs">{{ line.room_type }}</span></td>
+              <td>{{ line.start|date }}</td><td>{{ line.end|date }}</td><td>{{ line.nights }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% if res.notes %}<p class="text-sm mt-3"><span class="muted">Notes :</span> {{ res.notes }}</p>{% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Compagnons de voyage</h2>
+      {% if res.companions %}
+      <div class="table-wrap"><table class="t">
+        <thead><tr><th>Nom</th><th>Prénom</th><th>Nationalité</th><th>Pièce</th><th></th></tr></thead>
+        <tbody>
+        {% for c in res.companions %}
+          <tr><td>{{ c.last_name }}</td><td>{{ c.first_name }}</td><td>{{ c.nationality }}</td>
+              <td>{{ ID_TYPES.get(c.id_type, c.id_type) }} {{ c.id_number }}</td>
+              <td class="no-print"><form method="post" action="/reservations/{{ res.id }}/companions/{{ c.id }}/delete">
+                <button class="btn btn-sm" type="submit" data-confirm="Retirer ce compagnon ?">Retirer</button></form></td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}<p class="muted text-sm">Aucun compagnon enregistré.</p>{% endif %}
+      <form method="post" action="/reservations/{{ res.id }}/companions" class="form-grid mt-3 no-print">
+        <label><span class="lbl">Nom</span><input class="inp" name="last_name" required></label>
+        <label><span class="lbl">Prénom</span><input class="inp" name="first_name" required></label>
+        <label><span class="lbl">Date de naissance</span><input class="inp" type="date" name="birth_date"></label>
+        <label><span class="lbl">Nationalité</span><input class="inp" name="nationality"></label>
+        <label><span class="lbl">Type de pièce</span>
+          <select class="inp" name="id_type">{% for k, l in ID_TYPES.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></label>
+        <label><span class="lbl">N° de pièce</span><input class="inp" name="id_number"></label>
+        <div><button class="btn" type="submit">Ajouter le compagnon</button></div>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Prestations et extras</h2>
+      {% if folio.charges %}
+      <div class="table-wrap"><table class="t">
+        <thead><tr><th>Libellé</th><th>Catégorie</th><th class="text-right">Montant TTC</th><th></th></tr></thead>
+        <tbody>
+        {% for c in folio.charges %}
+          <tr><td>{{ c.label }}</td><td class="muted">{{ CHARGE_CATEGORIES.get(c.category, c.category) }}</td>
+              <td class="text-right">{{ c.amount_ttc|money(s.currency_symbol) }}</td>
+              <td class="no-print">{% if active %}<form method="post" action="/reservations/{{ res.id }}/charges/{{ c.id }}/delete">
+                <button class="btn btn-sm" type="submit" data-confirm="Supprimer cette prestation ?">✕</button></form>{% endif %}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}<p class="muted text-sm">Aucune prestation portée au folio.</p>{% endif %}
+
+      {% if active %}
+      <div class="grid gap-4 md:grid-cols-2 mt-4 no-print">
+        <form method="post" action="/reservations/{{ res.id }}/charges" class="space-y-2">
+          <h3 class="font-semibold text-sm">Extra manuel</h3>
+          <input class="inp" name="label" placeholder="Libellé (ex : blanchisserie)" required>
+          <div class="grid grid-cols-2 gap-2">
+            <input class="inp" name="amount" type="number" min="1" placeholder="Montant TTC" required>
+            <select class="inp" name="category">
+              <option value="autre">Extra</option>
+              {% for key, label in MODULES.items() if key in modules %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <button class="btn" type="submit">Ajouter</button>
+        </form>
+        {% if service_items %}
+        <form method="post" action="/reservations/{{ res.id }}/charges" class="space-y-2">
+          <h3 class="font-semibold text-sm">Prestation des modules actifs</h3>
+          <select class="inp" name="service_item_id" required>
+            {% for item in service_items %}
+              <option value="{{ item.id }}">{{ MODULES.get(item.category) }} – {{ item.name }} ({{ item.price_ttc|money(s.currency_symbol) }})</option>
+            {% endfor %}
+          </select>
+          <button class="btn" type="submit">Porter au folio</button>
+        </form>
+        {% endif %}
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Versements</h2>
+      {% if folio.payments %}
+      <table class="t">
+        <thead><tr><th>Date</th><th>Type</th><th>Mode</th><th>Note</th><th class="text-right">Montant</th></tr></thead>
+        <tbody>
+        {% for p in folio.payments %}
+          <tr><td>{{ p.paid_at|dt }}</td><td>{{ PAYMENT_KINDS.get(p.kind, p.kind) }}</td>
+              <td>{{ PAYMENT_METHODS.get(p.method, p.method) }}</td><td class="muted">{{ p.note }}</td>
+              <td class="text-right">{{ p.amount|money(s.currency_symbol) }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<p class="muted text-sm">Aucun versement enregistré.</p>{% endif %}
+
+      {% if res.status not in ('cancelled', 'no_show') %}
+      <form method="post" action="/reservations/{{ res.id }}/payments" class="form-grid mt-3 no-print">
+        <label><span class="lbl">Montant ({{ s.currency_symbol }})</span><input class="inp" type="number" min="1" name="amount" required></label>
+        <label><span class="lbl">Type</span>
+          <select class="inp" name="kind">{% for k, l in PAYMENT_KINDS.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></label>
+        <label><span class="lbl">Mode</span>
+          <select class="inp" name="method">{% for k, l in PAYMENT_METHODS.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></label>
+        <label><span class="lbl">Note</span><input class="inp" name="note"></label>
+        <div><button class="btn btn-primary" type="submit">Enregistrer le versement</button></div>
+      </form>
+      {% endif %}
+    </section>
+  </div>
+
+  <aside class="space-y-4">
+    <section class="card">
+      <h2>Folio</h2>
+      <table class="t">
+        <tbody>
+          <tr><td>Nuitées (TTC)</td><td class="text-right">{{ folio.room_total|money(s.currency_symbol) }}</td></tr>
+          <tr><td>Extras (TTC)</td><td class="text-right">{{ folio.charges_total|money(s.currency_symbol) }}</td></tr>
+          <tr class="muted"><td>Dont base HT</td><td class="text-right">{{ folio.taxable_ht|money(s.currency_symbol) }}</td></tr>
+          <tr class="muted"><td>TVA {{ folio.vat_rate }} %</td><td class="text-right">{{ folio.vat_amount|money(s.currency_symbol) }}</td></tr>
+          {% if s.tourist_tax_enabled %}
+          <tr><td>Taxe de séjour</td><td class="text-right">{{ folio.tourist_tax|money(s.currency_symbol) }}</td></tr>
+          {% endif %}
+          <tr style="font-weight:700"><td>Total à payer</td><td class="text-right">{{ folio.total_due|money(s.currency_symbol) }}</td></tr>
+          <tr><td>Versements</td><td class="text-right">− {{ folio.paid|money(s.currency_symbol) }}</td></tr>
+          <tr style="font-weight:700;font-size:1.05rem">
+            <td>Solde</td>
+            <td class="text-right" style="color:{{ 'var(--danger)' if folio.balance > 0 else 'var(--ok)' }}">{{ folio.balance|money(s.currency_symbol) }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="muted text-xs mt-2">Tarifs saisis TTC ; TVA extraite. Taxe de séjour : {{ s.tourist_tax_per_person_night }} {{ s.currency_symbol }} / nuitée / adulte.</p>
+    </section>
+
+    <section class="card">
+      <h2>Historique client</h2>
+      {% if guest_history %}
+      <ul class="text-sm space-y-1">
+        {% for h in guest_history %}
+          <li><a href="/reservations/{{ h.id }}">{{ h.code }}</a> · {{ h.check_in|date }} · {{ h.status_label }}</li>
+        {% endfor %}
+      </ul>
+      {% else %}<p class="muted text-sm">Premier séjour connu.</p>{% endif %}
+    </section>
+  </aside>
+</div>
+{% endblock %}

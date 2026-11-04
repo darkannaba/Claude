@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Planning{% endblock %}
+{% block content %}
+<div class="flex flex-wrap items-end justify-between gap-3">
+  <div>
+    <h1 class="text-2xl font-bold">Planning d'occupation</h1>
+    <p class="muted text-sm">Du {{ start_day|date }} au {{ window[-1]|date }}</p>
+  </div>
+  <div class="flex flex-wrap gap-2 text-sm">
+    <span class="badge" style="background:var(--bar-confirmed);color:#fff">Confirmée</span>
+    <span class="badge" style="background:var(--bar-in);color:#fff">En séjour</span>
+    <span class="badge" style="background:var(--bar-out);color:#fff">Clôturée</span>
+  </div>
+</div>
+
+<form method="get" class="card no-print flex flex-wrap items-end gap-3">
+  <label><span class="lbl">Début</span><input class="inp" type="date" name="start" value="{{ start_day.isoformat() }}"></label>
+  <label><span class="lbl">Période</span>
+    <select class="inp" name="days">
+      {% for d in (7, 14, 30) %}<option value="{{ d }}" {{ 'selected' if d == days }}>{{ d }} jours</option>{% endfor %}
+    </select></label>
+  <label><span class="lbl">Type</span>
+    <select class="inp" name="room_type_id">
+      <option value="">Tous</option>
+      {% for rt in room_types %}<option value="{{ rt.id }}" {{ 'selected' if room_type_id == rt.id }}>{{ rt.name }}</option>{% endfor %}
+    </select></label>
+  <label><span class="lbl">Étage</span>
+    <select class="inp" name="floor">
+      <option value="">Tous</option>
+      {% for f in floors %}<option value="{{ f }}" {{ 'selected' if floor == f }}>Étage {{ f }}</option>{% endfor %}
+    </select></label>
+  <button class="btn btn-primary" type="submit">Afficher</button>
+  <a class="btn" href="/planning?start={{ prev_start.isoformat() }}&days={{ days }}">◀ Précédent</a>
+  <a class="btn" href="/planning?start={{ next_start.isoformat() }}&days={{ days }}">Suivant ▶</a>
+</form>
+
+<div class="card table-wrap p-0">
+  <table class="gantt">
+    <thead>
+      <tr>
+        <th class="room-col">Chambre</th>
+        {% for d in window %}
+          <th class="day {{ 'today' if d == today }}">{{ d.strftime('%d') }}<div class="font-normal">{{ d.strftime('%a') }}</div></th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td class="room-col">{{ row.room.number }}<div class="muted font-normal text-xs">{{ row.room.room_type.name }}</div></td>
+        {% for cell in row.cells %}
+          {% if cell.kind == 'bar' %}
+            <td colspan="{{ cell.span }}" class="bar-cell">
+              <a class="bar {{ cell.seg.reservation.status }}" href="/reservations/{{ cell.seg.reservation.id }}"
+                 title="{{ cell.seg.reservation.guest.full_name }} · {{ cell.seg.reservation.code }} · {{ cell.seg.reservation.status_label }}">
+                {{ cell.seg.reservation.guest.full_name }}
+              </a>
+            </td>
+          {% else %}
+            <td class="free" title="{{ cell.day|date }} · libre">
+              <a href="/reservations/new?check_in={{ cell.day.isoformat() }}&check_out={{ cell.next.isoformat() }}&room_type_id={{ row.room.room_type_id }}"
+                 class="no-print" style="display:block;height:100%;text-decoration:none;color:transparent">+</a>
+            </td>
+          {% endif %}
+        {% endfor %}
+      </tr>
+      {% else %}
+      <tr><td class="muted p-4">Aucune chambre ne correspond aux filtres.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
