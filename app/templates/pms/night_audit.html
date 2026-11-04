@@ -1,0 +1,58 @@
+{% extends "layout/base.html" %}
+{% import "macros/ui.html" as ui with context %}
+{% block title %}Audit de nuit{% endblock %}
+{% block content %}
+<div>
+  <h1 class="page-title">Audit de nuit · clôture journalière</h1>
+  <p class="page-subtitle">L'audit fige définitivement le prix de chaque nuitée et la taxe de séjour dans le folio. Un changement ultérieur des tarifs ne modifie plus ces écritures ni les factures. Exécution automatique chaque nuit à {{ '%02d'|format(hs.night_audit_hour) }} h.</p>
+</div>
+
+<div class="grid gap-5 lg:grid-cols-3">
+  <section class="card lg:col-span-2">
+    <div class="card-title">{{ icon('moon', 'h-4 w-4') }} Journées à clôturer</div>
+    {% if pending %}
+      <div class="flash-warning mb-4">{{ icon('alert', 'h-5 w-5') }}<span>{{ pending|length }} journée(s) en attente : {% for d in pending %}{{ d|date }}{{ ', ' if not loop.last }}{% endfor %}.</span></div>
+      <form method="post" action="/night-audit/run" data-confirm="Clôturer toutes les journées en attente ?">{{ ui.csrf() }}
+        <input type="hidden" name="mode" value="pending">
+        <button class="btn-primary">{{ icon('lock', 'h-4 w-4') }} Clôturer les {{ pending|length }} journée(s) en attente</button></form>
+    {% else %}
+      <div class="flash-success">{{ icon('check', 'h-5 w-5') }}<span>Toutes les journées passées sont clôturées.</span></div>
+    {% endif %}
+    <form method="post" action="/night-audit/run" class="mt-5 flex flex-wrap items-end gap-3 border-t border-slate-200 pt-4 dark:border-slate-800"
+          data-confirm="Clôturer cette journée ? Les nuitées seront figées.">{{ ui.csrf() }}
+      <input type="hidden" name="mode" value="date">
+      <label><span class="label">Clôturer une date précise (jusqu'à aujourd'hui inclus)</span>
+        <input class="input" type="date" name="business_date" value="{{ today.isoformat() }}" max="{{ today.isoformat() }}" required></label>
+      <button class="btn-secondary">{{ icon('lock', 'h-4 w-4') }} Clôturer</button>
+    </form>
+  </section>
+  <section class="card">
+    <div class="card-title">{{ icon('building', 'h-4 w-4') }} Situation</div>
+    <dl class="space-y-2 text-sm">
+      <div class="flex justify-between"><dt>Séjours en cours</dt><dd class="font-semibold">{{ in_house|length }}</dd></div>
+      <div class="flex justify-between"><dt>Arrivées non présentées (dates passées)</dt><dd class="font-semibold">{{ late_arrivals|length }}</dd></div>
+      <div class="flex justify-between"><dt>No-show automatique</dt><dd>{{ 'Activé' if hs.auto_no_show else 'Désactivé' }}</dd></div>
+    </dl>
+    {% if late_arrivals %}
+    <ul class="mt-3 space-y-1 text-xs">{% for r in late_arrivals %}<li><a href="/reservations/{{ r.id }}">{{ r.code }}</a> – {{ r.guest.full_name }} ({{ r.check_in|date }})</li>{% endfor %}</ul>
+    {% endif %}
+  </section>
+</div>
+
+<section class="card">
+  <div class="card-title">{{ icon('archive', 'h-4 w-4') }} Historique des clôtures</div>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Journée</th><th>Exécuté le</th><th>Par</th><th class="num">Nuitées figées</th><th class="num">CA hébergement</th><th class="num">Taxe de séjour</th><th class="num">TO</th><th class="num">No-show</th><th></th></tr></thead>
+    <tbody>
+    {% for run in runs %}
+      <tr><td class="font-medium">{{ run.business_date|weekday }} {{ run.business_date|date }}</td><td>{{ run.run_at|dt }}</td><td>{{ run.run_by }}</td>
+        <td class="num">{{ run.rooms_posted }}</td><td class="num">{{ run.room_revenue|money }}</td><td class="num">{{ run.tax_posted|money }}</td>
+        <td class="num">{{ run.occupancy_percent }} %</td><td class="num">{{ run.no_shows }}</td>
+        <td class="text-right">{{ ui.print_link('/night-audit/' ~ run.business_date.isoformat() ~ '/report.pdf', 'Rapport', '/night-audit', 'btn-secondary btn-sm') }}</td></tr>
+    {% else %}
+      <tr><td colspan="9">{{ ui.empty("Aucune clôture pour l'instant.") }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}

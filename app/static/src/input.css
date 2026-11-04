@@ -1,0 +1,87 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { @apply antialiased; }
+  body { @apply bg-slate-100 text-slate-800 dark:bg-slate-950 dark:text-slate-200; }
+  [x-cloak] { display: none !important; }
+  h1, h2, h3 { @apply text-slate-900 dark:text-white; }
+  a { @apply text-brand-700 hover:text-brand-800 dark:text-brand-400 dark:hover:text-brand-300; }
+  [dir="rtl"], .ar { font-family: "Noto Sans Arabic", "Segoe UI", Tahoma, "DejaVu Sans", sans-serif; }
+}
+
+@layer components {
+  .page-title { @apply text-2xl font-bold tracking-tight text-slate-900 dark:text-white; }
+  .page-subtitle { @apply mt-1 text-sm text-slate-500 dark:text-slate-400; }
+  .card { @apply rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900; }
+  .card-title { @apply mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400; }
+
+  .btn { @apply inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3.5 py-2 text-sm font-medium no-underline shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50; }
+  .btn-primary { @apply btn border-transparent bg-brand-600 text-white hover:bg-brand-700 hover:text-white; }
+  .btn-secondary { @apply btn border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 dark:hover:text-white; }
+  .btn-danger { @apply btn border-transparent bg-rose-600 text-white hover:bg-rose-700 hover:text-white; }
+  .btn-success { @apply btn border-transparent bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white; }
+  .btn-warning { @apply btn border-transparent bg-amber-500 text-white hover:bg-amber-600 hover:text-white; }
+  .btn-ghost { @apply btn border-transparent bg-transparent text-slate-600 shadow-none hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white; }
+  .btn-sm { @apply px-2.5 py-1.5 text-xs; }
+
+  .input { @apply block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100; }
+  .label { @apply mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400; }
+  .help { @apply mt-1 text-xs text-slate-500 dark:text-slate-400; }
+  .checkbox { @apply h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 dark:border-slate-600 dark:bg-slate-900; }
+
+  .badge { @apply inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold; }
+  .badge-green { @apply badge bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300; }
+  .badge-blue { @apply badge bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-300; }
+  .badge-teal { @apply badge bg-brand-100 text-brand-800 dark:bg-brand-900/50 dark:text-brand-300; }
+  .badge-amber { @apply badge bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300; }
+  .badge-red { @apply badge bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-300; }
+  .badge-slate { @apply badge bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300; }
+  .badge-violet { @apply badge bg-violet-100 text-violet-800 dark:bg-violet-900/50 dark:text-violet-300; }
+
+  .table-wrap { @apply -mx-5 overflow-x-auto px-5; }
+  .table { @apply w-full border-collapse text-sm; }
+  .table th { @apply whitespace-nowrap border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400; }
+  .table td { @apply border-b border-slate-100 px-3 py-2.5 align-top dark:border-slate-800; }
+  .table tbody tr:hover td { @apply bg-slate-50 dark:bg-slate-800/40; }
+  .num { @apply whitespace-nowrap text-right tabular-nums; }
+
+  .kpi { @apply card flex flex-col gap-1; }
+  .kpi-label { @apply text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400; }
+  .kpi-value { @apply text-2xl font-bold tabular-nums text-slate-900 dark:text-white; }
+  .kpi-sub { @apply text-xs text-slate-500 dark:text-slate-400; }
+
+  .nav-item { @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-300 no-underline transition hover:bg-slate-800 hover:text-white; }
+  .nav-item-active { @apply nav-item bg-brand-600/20 text-white ring-1 ring-inset ring-brand-500/40; }
+
+  .flash { @apply flex items-start gap-2 rounded-lg border px-4 py-3 text-sm; }
+  .flash-success { @apply flash border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300; }
+  .flash-error { @apply flash border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-300; }
+  .flash-info { @apply flash border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900 dark:bg-sky-950/60 dark:text-sky-300; }
+  .flash-warning { @apply flash border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/60 dark:text-amber-300; }
+  .flash-danger { @apply flash-error; }
+
+  .room-tile { @apply block rounded-lg border border-l-4 bg-white p-2.5 text-slate-800 no-underline shadow-sm transition hover:-translate-y-0.5 hover:shadow dark:bg-slate-900 dark:text-slate-200; }
+  .room-available { @apply border-slate-200 border-l-emerald-500 dark:border-slate-800 dark:border-l-emerald-500; }
+  .room-occupied { @apply border-slate-200 border-l-sky-500 dark:border-slate-800 dark:border-l-sky-500; }
+  .room-dirty { @apply border-slate-200 border-l-amber-500 dark:border-slate-800 dark:border-l-amber-500; }
+  .room-maintenance { @apply border-slate-200 border-l-rose-500 dark:border-slate-800 dark:border-l-rose-500; }
+
+  .gantt { @apply border-separate border-spacing-0 text-xs; }
+  .gantt th, .gantt td { @apply h-10 min-w-[2.6rem] border-b border-r border-slate-200 p-0 dark:border-slate-800; }
+  .gantt thead th { @apply bg-slate-50 px-1 text-center font-semibold text-slate-500 dark:bg-slate-900 dark:text-slate-400; }
+  .gantt .sticky-col { @apply sticky left-0 z-10 min-w-[7rem] bg-white px-3 text-left dark:bg-slate-900; }
+  .gantt .weekend { @apply bg-slate-50/80 dark:bg-slate-800/30; }
+  .gantt .today { @apply bg-brand-50 dark:bg-brand-900/20; }
+  .gantt-bar { @apply mx-0.5 flex h-8 items-center overflow-hidden whitespace-nowrap rounded-md px-2 text-xs font-medium text-white no-underline shadow-sm hover:text-white hover:brightness-110; }
+  .bar-confirmed { @apply bg-sky-500; }
+  .bar-checked_in { @apply bg-brand-600; }
+  .bar-checked_out { @apply bg-slate-400 dark:bg-slate-600; }
+}
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff !important; color: #000 !important; }
+  .card { box-shadow: none !important; border: 0 !important; }
+}

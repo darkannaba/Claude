@@ -1,0 +1,266 @@
+{% extends "layout/base.html" %}
+{% import "macros/ui.html" as ui with context %}
+{% block title %}{{ res.code }} – {{ res.guest.full_name }}{% endblock %}
+{% block content %}
+{% set back = '/reservations/' ~ res.id %}
+<div class="flex flex-wrap items-start justify-between gap-4">
+  <div>
+    <div class="text-sm text-slate-500"><a href="/reservations">Réservations</a> / <span class="font-mono">{{ res.code }}</span></div>
+    <h1 class="page-title flex flex-wrap items-center gap-2">
+      <a href="/guests/{{ res.guest.id }}" class="text-inherit">{{ res.guest.full_name }}</a>
+      {% if res.guest.full_name_ar %}<span class="ar text-lg font-normal text-slate-500" dir="rtl">{{ res.guest.full_name_ar }}</span>{% endif %}
+      {{ ui.res_badge(res.status) }} {{ ui.guest_badge(res.guest) }}
+    </h1>
+    <p class="page-subtitle">Chambre <strong>{{ res.room.number }}</strong> ({{ res.room_type.name }}) · du {{ res.check_in|date }} au {{ res.check_out|date }} · {{ res.nights }} nuit(s) · {{ res.adults }} adulte(s), {{ res.children }} enfant(s){% if res.company %} · {{ res.company.name }} (−{{ res.company.discount_percent }} %){% endif %}</p>
+  </div>
+  <div class="flex flex-wrap gap-2 no-print">
+    {% if res.status == 'confirmed' and today >= res.check_in %}
+      <form method="post" action="/reservations/{{ res.id }}/checkin" class="flex items-center gap-2">{{ ui.csrf() }}
+        {% if user.role == 'admin' and res.guest.is_blacklisted %}<label class="flex items-center gap-1 text-xs"><input class="checkbox" type="checkbox" name="override" value="1"> forcer</label>{% endif %}
+        <button class="btn-success">{{ icon('key', 'h-4 w-4') }} Check-in</button></form>
+    {% endif %}
+    {% if res.status == 'checked_in' %}
+      <form method="post" action="/reservations/{{ res.id }}/checkout" class="flex items-center gap-2"
+            data-confirm="Clôturer le séjour ? Les nuits seront figées et la facture définitive émise.">{{ ui.csrf() }}
+        <label class="flex items-center gap-1 text-xs"><input class="checkbox" type="checkbox" name="force" value="1"> départ malgré solde impayé</label>
+        <button class="btn-primary">{{ icon('logout', 'h-4 w-4') }} Check-out</button></form>
+    {% endif %}
+  </div>
+</div>
+
+{{ ui.alerts_list(alerts) }}
+
+<div class="grid gap-5 xl:grid-cols-3">
+  <div class="space-y-5 xl:col-span-2">
+
+    <section class="card">
+      <div class="card-title">{{ icon('cash', 'h-4 w-4') }} Folio
+        {% if folio.has_projection %}<span class="badge-amber normal-case">contient du prévisionnel</span>{% endif %}
+        {% if res.final_invoice %}<span class="badge-slate normal-case">{{ icon('lock', 'h-3 w-3') }} verrouillé – facture {{ res.final_invoice.number }}</span>{% endif %}
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Date</th><th>Désignation</th><th>Type</th><th class="num">TVA</th><th class="num">Montant TTC</th><th></th></tr></thead>
+          <tbody>
+          {% for line in folio.lines %}
+            <tr class="{{ 'text-slate-400 italic' if not line.posted }} {{ 'line-through decoration-slate-400' if line.reversed }}">
+              <td class="whitespace-nowrap">{{ line.business_date|date }}</td>
+              <td>{{ line.description }} {% if line.posted and not line.invoiced and line.kind in ('room','tax') %}<span class="badge-teal">{{ icon('lock', 'h-3 w-3') }} figée</span>{% endif %}</td>
+              <td class="text-xs">{{ line.kind_label }}</td>
+              <td class="num text-xs">{{ (line.vat_rate ~ ' %') if line.kind != 'tax' else '—' }}</td>
+              <td class="num font-medium">{{ line.amount|money }}</td>
+              <td class="text-right no-print">
+                {% if line.posted and not line.invoiced and not line.is_reversal and not line.reversed and (line.kind not in ('room', 'tax') or user.role == 'admin') %}
+                <form method="post" action="/reservations/{{ res.id }}/items/{{ line.item_id }}/void" data-confirm="Annuler cette écriture ?">{{ ui.csrf() }}
+                  <input type="hidden" name="reason" value="Correction réception">
+                  <button class="btn-ghost btn-sm" title="Annuler l'écriture">{{ icon('x', 'h-4 w-4') }}</button></form>
+                {% endif %}
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6">{{ ui.empty("Aucune écriture.") }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if res.is_active %}
+      <form method="post" action="/reservations/{{ res.id }}/extras" class="mt-4 grid gap-3 border-t border-slate-200 pt-4 no-print dark:border-slate-800 sm:grid-cols-4">
+        {{ ui.csrf() }}
+        <label class="sm:col-span-2"><span class="label">Ajouter un extra</span><input class="input" name="description" placeholder="Blanchisserie, minibar, navette…" required></label>
+        <label><span class="label">Montant TTC</span><input class="input" type="number" name="amount" min="1" required></label>
+        <label><span class="label">TVA</span>
+          <select class="input" name="vat"><option value="services">Services ({{ hs.vat_rate_services }} %)</option>
+            <option value="fnb">Restauration ({{ hs.vat_rate_fnb }} %)</option><option value="accommodation">Hébergement ({{ hs.vat_rate_accommodation }} %)</option></select></label>
+        <div class="sm:col-span-4"><button class="btn-secondary">{{ icon('plus', 'h-4 w-4') }} Porter au folio</button></div>
+      </form>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <div class="card-title">{{ icon('cash', 'h-4 w-4') }} Versements</div>
+      {% if folio.payments %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Date</th><th>Type</th><th>Mode</th><th>Référence</th><th>Par</th><th class="num">Montant</th></tr></thead>
+        <tbody>
+        {% for p in folio.payments %}
+          <tr><td>{{ p.paid_at|dt }}</td><td>{{ p.kind_label }}</td><td>{{ p.method_label }}</td>
+            <td class="text-xs">{{ p.reference }} {{ p.note }}</td><td class="text-xs">{{ p.user.username if p.user else '—' }}</td>
+            <td class="num font-medium {{ 'text-rose-600' if p.kind == 'remboursement' }}">{{ p.signed_amount|money }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}{{ ui.empty("Aucun versement.") }}{% endif %}
+      <form method="post" action="/reservations/{{ res.id }}/payments" class="mt-4 grid gap-3 border-t border-slate-200 pt-4 no-print dark:border-slate-800 sm:grid-cols-5">
+        {{ ui.csrf() }}
+        <label><span class="label">Montant ({{ hs.currency_symbol }})</span><input class="input" type="number" name="amount" min="1" value="{{ departure_balance if departure_balance > 0 else '' }}" required></label>
+        <label><span class="label">Type</span><select class="input" name="kind">
+          {% for k, l in PAYMENT_KINDS.items() %}<option value="{{ k }}" {{ 'selected' if (k == 'acompte' and res.status == 'confirmed') or (k == 'paiement' and res.status != 'confirmed') }}>{{ l }}</option>{% endfor %}</select></label>
+        <label><span class="label">Mode</span><select class="input" name="method">{% for k, l in PAYMENT_METHODS.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></label>
+        <label><span class="label">Référence (TPE, chèque…)</span><input class="input" name="reference"></label>
+        <div class="flex items-end"><button class="btn-primary w-full">{{ icon('check', 'h-4 w-4') }} Encaisser</button></div>
+      </form>
+    </section>
+
+    <section class="card">
+      <div class="card-title">{{ icon('users', 'h-4 w-4') }} Accompagnateurs ({{ res.companions|length }})</div>
+      {% if res.companions %}
+      <div class="table-wrap"><table class="table">
+        <thead><tr><th>Nom</th><th>Naissance</th><th>Nationalité</th><th>Lien</th><th>Pièce</th><th></th></tr></thead>
+        <tbody>
+        {% for c in res.companions %}
+          <tr><td>{{ c.full_name }} {% if c.full_name_ar %}<span class="ar text-slate-500" dir="rtl">{{ c.full_name_ar }}</span>{% endif %}</td>
+            <td>{{ c.birth_date|date if c.birth_date else '—' }} {{ c.birth_place }}</td><td>{{ c.nationality }}</td><td>{{ c.relationship_label }}</td>
+            <td class="text-xs">{{ ID_TYPES.get(c.id_type, '') }} {{ c.id_number }}</td>
+            <td class="text-right no-print"><form method="post" action="/reservations/{{ res.id }}/companions/{{ c.id }}/delete" data-confirm="Retirer cet accompagnateur ?">{{ ui.csrf() }}
+              <button class="btn-ghost btn-sm">{{ icon('trash', 'h-4 w-4') }}</button></form></td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% endif %}
+      <details class="mt-3 no-print" {{ 'open' if not res.companions and res.adults + res.children > 1 }}>
+        <summary class="cursor-pointer text-sm font-medium text-brand-700 dark:text-brand-400">Ajouter un accompagnateur</summary>
+        <form method="post" action="/reservations/{{ res.id }}/companions" class="mt-3 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          {{ ui.csrf() }}
+          {{ ui.field('Nom', 'last_name', required=true) }}{{ ui.field('Prénom', 'first_name', required=true) }}
+          {{ ui.field('Nom (arabe)', 'last_name_ar', extra='dir="rtl"') }}{{ ui.field('Prénom (arabe)', 'first_name_ar', extra='dir="rtl"') }}
+          {{ ui.field('Lien (épouse, fils…)', 'relationship_label') }}
+          {{ ui.field('Date de naissance', 'birth_date', type='date') }}{{ ui.field('Lieu de naissance', 'birth_place') }}
+          {{ ui.field('Nationalité', 'nationality', 'Algérienne') }}
+          <label><span class="label">Type de pièce</span><select class="input" name="id_type">{% for k, l in ID_TYPES.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></label>
+          {{ ui.field('N° de pièce', 'id_number') }}
+          <div class="sm:col-span-3 lg:col-span-5"><button class="btn-secondary">{{ icon('plus', 'h-4 w-4') }} Ajouter</button></div>
+        </form>
+      </details>
+    </section>
+
+    {% if res.is_active %}
+    <section class="card no-print">
+      <div class="card-title">{{ icon('swap', 'h-4 w-4') }} Modifier le séjour</div>
+      <div class="grid gap-6 lg:grid-cols-2">
+        <form method="post" action="/reservations/{{ res.id }}/room" class="space-y-3">
+          {{ ui.csrf() }}
+          <h3 class="text-sm font-semibold">Changement de chambre</h3>
+          {% if rooms_for_move %}
+            <p class="help">Effet le {{ move_from|date }}{% if res.status == 'checked_in' %} : l'ancienne chambre passe « À nettoyer »{% endif %}. Les nuits déjà figées restent sur l'ancienne chambre.</p>
+            <input type="hidden" name="from_date" value="{{ move_from.isoformat() }}">
+            <select class="input" name="new_room_id">{% for r in rooms_for_move %}<option value="{{ r.id }}">{{ r.number }} – {{ r.room_type.name }} ({{ r.room_type.max_occupancy }} pers.)</option>{% endfor %}</select>
+            <button class="btn-secondary">{{ icon('swap', 'h-4 w-4') }} Changer</button>
+          {% else %}<p class="help">Aucune autre chambre libre jusqu'au {{ res.check_out|date }}.</p>{% endif %}
+        </form>
+        {% if res.status == 'confirmed' %}
+        <form method="post" action="/reservations/{{ res.id }}/update" class="space-y-3">
+          {{ ui.csrf() }}
+          <h3 class="text-sm font-semibold">Dates, chambre, occupation</h3>
+          <div class="grid grid-cols-2 gap-3">
+            <input class="input" type="date" name="check_in" value="{{ res.check_in.isoformat() }}" required>
+            <input class="input" type="date" name="check_out" value="{{ res.check_out.isoformat() }}" required>
+            <select class="input col-span-2" name="room_id">{% for r in all_rooms %}<option value="{{ r.id }}" {{ 'selected' if r.id == res.room_id }}>{{ r.number }} – {{ r.room_type.name }}</option>{% endfor %}</select>
+            <input class="input" type="number" name="adults" min="1" value="{{ res.adults }}" title="Adultes">
+            <input class="input" type="number" name="children" min="0" value="{{ res.children }}" title="Enfants">
+            <select class="input col-span-2" name="company_id"><option value="">Sans entreprise</option>
+              {% for c in companies %}<option value="{{ c.id }}" {{ 'selected' if res.company_id == c.id }}>{{ c.name }}</option>{% endfor %}</select>
+          </div>
+          <button class="btn-secondary">{{ icon('check', 'h-4 w-4') }} Enregistrer</button>
+        </form>
+        {% endif %}
+      </div>
+      {% if res.status == 'confirmed' %}
+      <div class="mt-5 flex flex-wrap gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
+        <form method="post" action="/reservations/{{ res.id }}/cancel" class="flex flex-wrap gap-2" data-confirm="Annuler cette réservation ?">{{ ui.csrf() }}
+          <input class="input w-64" name="reason" placeholder="Motif d'annulation"><button class="btn-danger">{{ icon('x', 'h-4 w-4') }} Annuler</button></form>
+        {% if today >= res.check_in %}
+        <form method="post" action="/reservations/{{ res.id }}/noshow" data-confirm="Déclarer un no-show ?">{{ ui.csrf() }}<button class="btn-warning">No-show</button></form>
+        {% endif %}
+      </div>
+      {% endif %}
+    </section>
+    {% endif %}
+  </div>
+
+  <aside class="space-y-5">
+    <section class="card">
+      <div class="card-title">{{ icon('chart', 'h-4 w-4') }} Résumé</div>
+      <dl class="space-y-2 text-sm">
+        <div class="flex justify-between"><dt>Hébergement</dt><dd class="num">{{ folio.room_total|money }}</dd></div>
+        <div class="flex justify-between"><dt>Services & extras</dt><dd class="num">{{ folio.other_total|money }}</dd></div>
+        <div class="flex justify-between text-slate-500"><dt>dont base HT</dt><dd class="num">{{ folio.total_ht|money }}</dd></div>
+        <div class="flex justify-between text-slate-500"><dt>dont TVA</dt><dd class="num">{{ folio.total_vat|money }}</dd></div>
+        <div class="flex justify-between"><dt>Taxe de séjour</dt><dd class="num">{{ folio.tax_total|money }}</dd></div>
+        <div class="flex justify-between border-t border-slate-200 pt-2 text-base font-semibold dark:border-slate-800"><dt>Total TTC</dt><dd class="num">{{ folio.total_ttc|money }}</dd></div>
+        <div class="flex justify-between"><dt>Versements</dt><dd class="num">− {{ folio.paid|money }}</dd></div>
+        <div class="flex justify-between rounded-lg px-3 py-2 text-lg font-bold {{ 'bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300' if folio.balance > 0 else 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300' }}">
+          <dt>Solde</dt><dd class="num">{{ folio.balance|money }}</dd></div>
+      </dl>
+      {% if res.status == 'checked_in' and departure_balance != folio.balance %}
+        <div class="mt-2 flex justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800/50"><span>Solde si départ aujourd'hui</span><span class="num font-semibold">{{ departure_balance|money }}</span></div>
+      {% endif %}
+      {% if folio.projected_total %}<p class="help mt-2">Dont {{ folio.projected_total|money }} prévisionnel (nuits non encore clôturées).</p>{% endif %}
+    </section>
+
+    <section class="card no-print">
+      <div class="card-title">{{ icon('printer', 'h-4 w-4') }} Documents</div>
+      <div class="grid gap-2">
+        {{ ui.print_link('/reservations/' ~ res.id ~ '/police.pdf', 'Fiche de police', back, 'btn-primary') }}
+        {{ ui.print_link('/reservations/' ~ res.id ~ '/invoice.pdf?format=a4', 'Facture A4' if res.final_invoice else 'Facture proforma A4', back) }}
+        {{ ui.print_link('/reservations/' ~ res.id ~ '/invoice.pdf?format=ticket', 'Ticket 80 mm', back) }}
+        <div class="flex gap-2 text-xs">
+          <a href="/reservations/{{ res.id }}/police.pdf" target="_blank">PDF fiche</a> ·
+          <a href="/reservations/{{ res.id }}/invoice.pdf?format=a4" target="_blank">PDF facture</a> ·
+          <a href="/reservations/{{ res.id }}/invoice.pdf?format=ticket" target="_blank">PDF ticket</a>
+        </div>
+        {% if hs.print_mode == 'network' %}
+        <div class="mt-2 border-t border-slate-200 pt-3 dark:border-slate-800">
+          <p class="label">Impression réseau directe</p>
+          <div class="flex flex-wrap gap-2">
+            {% for doc, label in [('police', 'Fiche (A4)'), ('invoice', 'Facture (A4)'), ('ticket', 'Ticket 80 mm')] %}
+            <form method="post" action="/reservations/{{ res.id }}/print/{{ doc }}">{{ ui.csrf() }}<button class="btn-secondary btn-sm">{{ icon('printer', 'h-3.5 w-3.5') }} {{ label }}</button></form>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+      <div class="mt-4 flex items-center gap-3 rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
+        <img src="/reservations/{{ res.id }}/qr.svg" alt="QR {{ res.code }}" class="h-20 w-20 rounded bg-white p-1">
+        <div class="text-xs text-slate-500">QR code du séjour <span class="font-mono font-semibold text-slate-700 dark:text-slate-200">{{ res.code }}</span> : scannez-le avec la douchette pour rouvrir cette fiche.</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title">{{ icon('users', 'h-4 w-4') }} Client</div>
+      <div class="space-y-1 text-sm">
+        <div><a href="/guests/{{ res.guest.id }}" class="font-semibold">{{ res.guest.full_name }}</a></div>
+        <div class="text-slate-500">{{ res.guest.phone or 'Téléphone non renseigné' }}</div>
+        <div class="text-slate-500">{{ res.guest.id_type_label }} : {{ res.guest.id_number or 'non renseignée' }}</div>
+        <div class="text-slate-500">{{ res.guest.nationality }}</div>
+      </div>
+      <form method="post" action="/reservations/{{ res.id }}/details" class="mt-4 space-y-3 border-t border-slate-200 pt-4 no-print dark:border-slate-800">
+        {{ ui.csrf() }}
+        <div class="grid grid-cols-2 gap-2">
+          <label><span class="label">Venant de</span><input class="input" name="coming_from" value="{{ res.coming_from }}"></label>
+          <label><span class="label">Se rendant à</span><input class="input" name="going_to" value="{{ res.going_to }}"></label>
+        </div>
+        <label><span class="label">Canal</span><select class="input" name="channel">{% for c in CHANNELS %}<option {{ 'selected' if c == res.channel }}>{{ c }}</option>{% endfor %}</select></label>
+        <label><span class="label">Notes</span><textarea class="input" name="notes" rows="2">{{ res.notes }}</textarea></label>
+        <button class="btn-secondary btn-sm">Enregistrer</button>
+      </form>
+    </section>
+
+    {% if orders %}
+    <section class="card">
+      <div class="card-title">{{ icon('bag', 'h-4 w-4') }} Additions imputées</div>
+      <ul class="space-y-1 text-sm">{% for o in orders %}<li class="flex justify-between"><a href="/pos/orders/{{ o.id }}">{{ o.number }}</a><span>{{ o.total|money }}</span></li>{% endfor %}</ul>
+    </section>
+    {% endif %}
+
+    <section class="card">
+      <div class="card-title">{{ icon('clock', 'h-4 w-4') }} Historique</div>
+      <ol class="space-y-2 text-xs">
+        {% for entry in history %}
+          <li><span class="text-slate-500">{{ entry.created_at|dt }}</span> · <strong>{{ entry.username }}</strong> · {{ entry.action }}<div class="text-slate-500">{{ entry.details }}</div></li>
+        {% else %}<li class="text-slate-500">Aucun événement.</li>{% endfor %}
+      </ol>
+      {% if res.cancel_reason %}<p class="mt-3 text-xs text-rose-600">Motif : {{ res.cancel_reason }}</p>{% endif %}
+    </section>
+  </aside>
+</div>
+{% endblock %}

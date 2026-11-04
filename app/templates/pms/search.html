@@ -1,0 +1,43 @@
+{% extends "layout/base.html" %}
+{% import "macros/ui.html" as ui with context %}
+{% block title %}Recherche{% endblock %}
+{% block content %}
+<div>
+  <h1 class="page-title">Recherche « {{ q }} »</h1>
+  <p class="page-subtitle">Codes réservation, factures, additions, QR et numéros de pièce exacts ouvrent directement la fiche.</p>
+</div>
+<form action="/search" method="get" class="card flex gap-2">
+  <input class="input" name="q" value="{{ q }}" autofocus autocomplete="off" placeholder="Nom, téléphone, pièce, code…">
+  <button class="btn-primary">{{ icon('search', 'h-4 w-4') }} Rechercher</button>
+</form>
+<div class="grid gap-5 lg:grid-cols-2">
+  <section class="card">
+    <div class="card-title">{{ icon('users', 'h-4 w-4') }} Clients ({{ result.guests|length }})</div>
+    {% if result.guests %}
+    <ul class="divide-y divide-slate-100 dark:divide-slate-800">
+      {% for g in result.guests %}
+      <li class="flex items-center justify-between py-2 text-sm">
+        <div><a href="/guests/{{ g.id }}" class="font-medium">{{ g.full_name }}</a> {{ ui.guest_badge(g) }}
+          <div class="text-xs text-slate-500">{{ g.phone }} · {{ g.id_type_label }} {{ g.id_number }}</div></div>
+        <a class="btn-secondary btn-sm" href="/reservations/new?guest_id={{ g.id }}">Réserver</a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}{{ ui.empty("Aucun client trouvé.") }}{% endif %}
+  </section>
+  <section class="card">
+    <div class="card-title">{{ icon('document', 'h-4 w-4') }} Réservations ({{ result.reservations|length }})</div>
+    {% if result.reservations %}
+    <ul class="divide-y divide-slate-100 dark:divide-slate-800">
+      {% for r in result.reservations %}
+      <li class="flex items-center justify-between py-2 text-sm">
+        <div><a href="/reservations/{{ r.id }}" class="font-mono font-medium">{{ r.code }}</a> · {{ r.guest.full_name }}
+          <div class="text-xs text-slate-500">Ch. {{ r.room.number }} · {{ r.check_in|date }} → {{ r.check_out|date }}</div></div>
+        {{ ui.res_badge(r.status) }}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}{{ ui.empty("Aucune réservation trouvée.") }}{% endif %}
+  </section>
+</div>
+{% endblock %}

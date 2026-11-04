@@ -1,0 +1,80 @@
+{% extends "layout/base.html" %}
+{% import "macros/ui.html" as ui with context %}
+{% block title %}Addition {{ order.number }}{% endblock %}
+{% block content %}
+{% set back = '/pos/orders/' ~ order.id %}
+<div class="flex flex-wrap items-start justify-between gap-3">
+  <div><div class="text-sm text-slate-500"><a href="/pos">Points de vente</a> / {{ order.outlet_label }}</div>
+    <h1 class="page-title flex items-center gap-2">Addition <span class="font-mono">{{ order.number }}</span> {{ ui.order_badge(order.status) }}</h1>
+    <p class="page-subtitle">{{ order.label or 'Sans libellé' }} · ouverte le {{ order.created_at|dt }}{% if order.user %} par {{ order.user.display_name }}{% endif %}</p></div>
+  <div class="flex flex-wrap gap-2">
+    {{ ui.print_link('/pos/orders/' ~ order.id ~ '/ticket.pdf', 'Ticket 80 mm', back) }}
+    {% if hs.print_mode == 'network' %}<form method="post" action="/pos/orders/{{ order.id }}/print">{{ ui.csrf() }}<button class="btn-secondary">{{ icon('printer', 'h-4 w-4') }} Imprimante ticket</button></form>{% endif %}
+  </div>
+</div>
+
+<div class="grid gap-5 xl:grid-cols-3">
+  {% if order.status == 'open' %}
+  <section class="card xl:col-span-2" x-data="posMenu">
+    <div class="card-title">{{ icon('bag', 'h-4 w-4') }} Articles</div>
+    <div class="mb-4 flex flex-wrap gap-2">
+      <input class="input max-w-xs" x-model="filter" placeholder="Filtrer…">
+      <button type="button" class="btn-sm" :class="category === 'all' ? 'btn-primary' : 'btn-secondary'" @click="category = 'all'">Tout</button>
+      {% for cat in categories %}<button type="button" class="btn-sm" :class="category === {{ cat|tojson|forceescape }} ? 'btn-primary' : 'btn-secondary'" @click="category = {{ cat|tojson|forceescape }}">{{ cat }}</button>{% endfor %}
+    </div>
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+      {% for item in items %}
+      <form method="post" action="/pos/orders/{{ order.id }}/lines"
+            x-show="(category === 'all' || category === {{ (item.category or 'Divers')|tojson|forceescape }}) && {{ item.name|lower|tojson|forceescape }}.includes(filter.toLowerCase())"
+            class="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+        {{ ui.csrf() }}<input type="hidden" name="item_id" value="{{ item.id }}">
+        <div class="font-medium">{{ item.name }}</div>
+        <div class="text-sm text-slate-500">{{ item.price|money }}{% if item.track_stock %} · stock {{ item.stock_qty }}{% endif %}</div>
+        <div class="mt-2 flex gap-2"><input class="input w-16" type="number" name="quantity" value="1" min="1">
+          <button class="btn-primary btn-sm flex-1" {{ 'disabled' if item.track_stock and item.stock_qty < 1 }}>{{ icon('plus', 'h-4 w-4') }}</button></div>
+      </form>
+      {% else %}
+        <div class="col-span-full">{{ ui.empty("Aucun article actif pour ce point de vente.") }}</div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <aside class="space-y-5 {{ 'xl:col-span-3 xl:max-w-2xl' if order.status != 'open' }}">
+    <section class="card">
+      <div class="card-title">{{ icon('document', 'h-4 w-4') }} Détail</div>
+      <table class="table">
+        <tbody>
+        {% for line in order.lines %}
+          <tr><td>{{ line.quantity }} × {{ line.description }}</td><td class="num">{{ line.amount|money }}</td>
+            <td class="text-right">{% if order.status == 'open' %}<form method="post" action="/pos/orders/{{ order.id }}/lines/{{ line.id }}/delete">{{ ui.csrf() }}<button class="btn-ghost btn-sm">{{ icon('x', 'h-4 w-4') }}</button></form>{% endif %}</td></tr>
+        {% else %}<tr><td colspan="3">{{ ui.empty("Addition vide.") }}</td></tr>{% endfor %}
+        </tbody>
+      </table>
+      <div class="mt-3 flex justify-between border-t border-slate-200 pt-3 text-xl font-bold dark:border-slate-800"><span>Total TTC</span><span>{{ order.total|money }}</span></div>
+      {% if order.status == 'room_charge' and order.reservation %}
+        <p class="mt-3 text-sm">Imputée sur la chambre <a href="/reservations/{{ order.reservation.id }}">{{ order.reservation.room.number }} – {{ order.reservation.guest.full_name }}</a>.</p>
+      {% elif order.status == 'paid' %}<p class="mt-3 text-sm">Réglée : {{ PAYMENT_METHODS.get(order.payment_method, order.payment_method) }}, le {{ order.closed_at|dt }}.</p>{% endif %}
+    </section>
+
+    {% if order.status == 'open' and order.lines %}
+    <section class="card space-y-4">
+      <div class="card-title">{{ icon('cash', 'h-4 w-4') }} Règlement</div>
+      <form method="post" action="/pos/orders/{{ order.id }}/pay" class="flex gap-2">{{ ui.csrf() }}
+        <select class="input" name="method">{% for k, l in PAYMENT_METHODS.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select>
+        <button class="btn-success">Comptant</button></form>
+      <form method="post" action="/pos/orders/{{ order.id }}/charge" class="flex gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">{{ ui.csrf() }}
+        <select class="input" name="reservation_id" required>
+          <option value="">Imputer sur une chambre en séjour…</option>
+          {% for r in in_house %}<option value="{{ r.id }}">Ch. {{ r.room.number }} – {{ r.guest.full_name }}</option>{% endfor %}
+        </select>
+        <button class="btn-primary">Room charge</button></form>
+    </section>
+    {% endif %}
+    {% if order.status == 'open' %}
+    <form method="post" action="/pos/orders/{{ order.id }}/void" data-confirm="Annuler cette addition ?">{{ ui.csrf() }}
+      <button class="btn-ghost text-rose-600">{{ icon('trash', 'h-4 w-4') }} Annuler l'addition</button></form>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}

@@ -1,12 +1,17 @@
-"""Point d'entrée : `python main.py` puis ouvrir http://localhost:8000 dans le navigateur."""
-import os
+"""Lancement du serveur : `python main.py` puis http://localhost:8000.
 
+Un seul processus (SQLite + planificateur intégré) : ne pas lancer plusieurs workers.
+"""
 import uvicorn
+
+from app.config import config
 
 if __name__ == "__main__":
     uvicorn.run(
         "app.main:app",
-        host=os.getenv("HOST", "0.0.0.0"),
-        port=int(os.getenv("PORT", "8000")),
-        reload=os.getenv("RELOAD", "0") == "1",
+        host=config.host,
+        port=config.port,
+        workers=1,
+        proxy_headers=True,
+        log_level=config.log_level.lower(),
     )

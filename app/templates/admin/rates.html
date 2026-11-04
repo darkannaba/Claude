@@ -1,36 +1,30 @@
-{% extends "base.html" %}
-{% block title %}Administration · Tarifs{% endblock %}
+{% extends "layout/base.html" %}
+{% import "macros/ui.html" as ui with context %}
+{% block title %}Tarifs saisonniers{% endblock %}
 {% block content %}
-<h1 class="text-2xl font-bold">Administration</h1>
+<div><h1 class="page-title">Tarifs saisonniers</h1>
+  <p class="page-subtitle">Un tarif saisonnier remplace le prix de base du type de chambre sur sa période (date de fin exclue). En cas de chevauchement, la priorité la plus élevée l'emporte ; la majoration du week-end ({{ hs.weekend_surcharge_percent }} %) et la remise entreprise s'appliquent ensuite.</p></div>
 {% include "admin/_nav.html" %}
-
 <section class="card">
-  <h2>Tarifs saisonniers</h2>
-  <p class="muted text-sm mb-3">Un tarif saisonnier remplace le prix de base du type de chambre pendant sa période (date de fin exclue). En cas de chevauchement, la priorité la plus élevée l'emporte. La majoration du week-end et la remise entreprise s'appliquent ensuite.</p>
-  <div class="table-wrap"><table class="t">
-    <thead><tr><th>Libellé</th><th>Type</th><th>Du</th><th>Au (exclu)</th><th class="text-right">Prix TTC / nuit</th><th>Priorité</th><th></th></tr></thead>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Libellé</th><th>Type</th><th>Du</th><th>Au (exclu)</th><th class="num">Prix TTC / nuit</th><th class="num">Priorité</th><th></th></tr></thead>
     <tbody>
     {% for p in periods %}
-      <tr>
-        <td>{{ p.name }}</td><td>{{ p.room_type.name }}</td><td>{{ p.start_date|date }}</td><td>{{ p.end_date|date }}</td>
-        <td class="text-right">{{ p.price_ttc|money(s.currency_symbol) }}</td><td>{{ p.priority }}</td>
-        <td><form method="post" action="/admin/rates/{{ p.id }}/delete">
-          <button class="btn btn-sm btn-danger" type="submit" data-confirm="Supprimer ce tarif ?">✕</button></form></td>
-      </tr>
+      <tr><td class="font-medium">{{ p.name }}</td><td>{{ p.room_type.name }}</td><td>{{ p.start_date|date }}</td><td>{{ p.end_date|date }}</td>
+        <td class="num">{{ p.price|money }}</td><td class="num">{{ p.priority }}</td>
+        <td class="text-right"><form method="post" action="/admin/rates/{{ p.id }}/delete" data-confirm="Supprimer ce tarif ?">{{ ui.csrf() }}<button class="btn-ghost btn-sm">{{ icon('trash', 'h-4 w-4') }}</button></form></td></tr>
     {% else %}
-      <tr><td colspan="7" class="muted">Aucun tarif saisonnier : le prix de base s'applique.</td></tr>
+      <tr><td colspan="7">{{ ui.empty("Aucun tarif saisonnier : les prix de base s'appliquent.") }}</td></tr>
     {% endfor %}
     </tbody>
   </table></div>
-  <form method="post" action="/admin/rates" class="form-grid mt-4">
-    <label><span class="lbl">Libellé</span><input class="inp" name="name" placeholder="Haute saison été"></label>
-    <label><span class="lbl">Type de chambre</span>
-      <select class="inp" name="room_type_id" required>{% for rt in room_types %}<option value="{{ rt.id }}">{{ rt.name }}</option>{% endfor %}</select></label>
-    <label><span class="lbl">Du</span><input class="inp" type="date" name="start_date" required></label>
-    <label><span class="lbl">Au (exclu)</span><input class="inp" type="date" name="end_date" required></label>
-    <label><span class="lbl">Prix TTC / nuit</span><input class="inp" type="number" min="0" name="price_ttc" required></label>
-    <label><span class="lbl">Priorité</span><input class="inp" type="number" name="priority" value="0"></label>
-    <div class="flex items-end"><button class="btn btn-primary" type="submit">Ajouter le tarif</button></div>
+  <form method="post" action="/admin/rates" class="mt-5 grid gap-3 border-t border-slate-200 pt-4 dark:border-slate-800 sm:grid-cols-3 lg:grid-cols-6">
+    {{ ui.csrf() }}
+    {{ ui.field('Libellé', 'name', placeholder='Haute saison été') }}
+    <label><span class="label">Type de chambre</span><select class="input" name="room_type_id">{% for rt in room_types %}<option value="{{ rt.id }}">{{ rt.name }}</option>{% endfor %}</select></label>
+    {{ ui.field('Du', 'start_date', type='date', required=true) }}{{ ui.field('Au (exclu)', 'end_date', type='date', required=true) }}
+    {{ ui.field('Prix TTC / nuit', 'price', type='number', required=true, extra='min="0"') }}{{ ui.field('Priorité', 'priority', 0, type='number') }}
+    <div class="sm:col-span-3 lg:col-span-6"><button class="btn-primary">{{ icon('plus', 'h-4 w-4') }} Ajouter le tarif</button></div>
   </form>
 </section>
 {% endblock %}

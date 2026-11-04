@@ -1,0 +1,41 @@
+{% extends "layout/base.html" %}
+{% import "macros/ui.html" as ui with context %}
+{% block title %}Entreprises{% endblock %}
+{% block content %}
+<div><div class="text-sm text-slate-500"><a href="/guests">Clients</a> / Entreprises</div>
+  <h1 class="page-title">Entreprises clientes</h1>
+  <p class="page-subtitle">La remise négociée s'applique automatiquement aux nuitées des séjours rattachés ; NIF et RC figurent sur la facture.</p></div>
+<div class="card"><div class="table-wrap"><table class="table">
+  <thead><tr><th>Raison sociale</th><th>NIF</th><th>RC</th><th>Téléphone</th><th>Email</th><th>Remise %</th><th>Adresse</th>{% if user.role == 'admin' %}<th></th>{% endif %}</tr></thead>
+  <tbody>
+  {% for c in companies %}
+    <tr>
+      {% if user.role == 'admin' %}
+        <td><input class="input" form="co-{{ c.id }}" name="name" value="{{ c.name }}" required></td>
+        <td><input class="input" form="co-{{ c.id }}" name="nif" value="{{ c.nif }}"></td>
+        <td><input class="input" form="co-{{ c.id }}" name="rc" value="{{ c.rc }}"></td>
+        <td><input class="input" form="co-{{ c.id }}" name="phone" value="{{ c.phone }}"></td>
+        <td><input class="input" form="co-{{ c.id }}" name="email" value="{{ c.email }}"></td>
+        <td><input class="input w-20" form="co-{{ c.id }}" type="number" min="0" max="100" name="discount_percent" value="{{ c.discount_percent }}"></td>
+        <td><input class="input" form="co-{{ c.id }}" name="address" value="{{ c.address }}"></td>
+        <td><form id="co-{{ c.id }}" method="post" action="/companies/{{ c.id }}">{{ ui.csrf() }}<button class="btn-secondary btn-sm">OK</button></form></td>
+      {% else %}
+        <td class="font-medium">{{ c.name }}</td><td>{{ c.nif }}</td><td>{{ c.rc }}</td><td>{{ c.phone }}</td><td>{{ c.email }}</td><td>{{ c.discount_percent }} %</td><td>{{ c.address }}</td>
+      {% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="8">{{ ui.empty("Aucune entreprise.") }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% if user.role == 'admin' %}
+<form method="post" action="/companies" class="mt-5 grid gap-3 border-t border-slate-200 pt-4 dark:border-slate-800 sm:grid-cols-3 lg:grid-cols-7">
+  {{ ui.csrf() }}
+  {{ ui.field('Raison sociale', 'name', required=true) }}{{ ui.field('NIF', 'nif') }}{{ ui.field('RC', 'rc') }}
+  {{ ui.field('Téléphone', 'phone') }}{{ ui.field('Email', 'email', type='email') }}{{ ui.field('Remise %', 'discount_percent', 0, type='number', extra='min="0" max="100"') }}
+  {{ ui.field('Adresse', 'address') }}
+  <div class="sm:col-span-3 lg:col-span-7"><button class="btn-primary">{{ icon('plus', 'h-4 w-4') }} Ajouter</button></div>
+</form>
+{% endif %}
+</div>
+{% endblock %}

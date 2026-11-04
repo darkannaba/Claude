@@ -1,0 +1,37 @@
+{% extends "layout/base.html" %}
+{% import "macros/ui.html" as ui with context %}
+{% block title %}Sauvegardes{% endblock %}
+{% block content %}
+<div><h1 class="page-title">Sauvegardes et restauration</h1>
+  <p class="page-subtitle">Sauvegarde automatique quotidienne à {{ '%02d'|format(hs.backup_hour) }} h dans <code class="text-xs">{{ backup_dir }}</code> ({{ retention }} dernières conservées). Une sauvegarde de sécurité est créée avant toute restauration.</p></div>
+{% include "admin/_nav.html" %}
+<div class="grid gap-5 lg:grid-cols-2">
+  <form method="post" action="/admin/backups" class="card flex items-center justify-between gap-3">{{ ui.csrf() }}
+    <div><div class="font-semibold">Sauvegarder maintenant</div><div class="help">Copie cohérente de la base, même pendant l'utilisation (mode WAL).</div></div>
+    <button class="btn-primary">{{ icon('archive', 'h-4 w-4') }} Sauvegarder</button></form>
+  <form method="post" action="/admin/backups/upload" enctype="multipart/form-data" class="card space-y-3"
+        data-confirm="Restaurer la base depuis ce fichier ? Les données actuelles seront remplacées (une sauvegarde de sécurité est faite avant).">{{ ui.csrf() }}
+    <div class="font-semibold">Restaurer depuis un fichier (.db)</div>
+    <div class="flex gap-2"><input class="input" type="file" name="file" accept=".db,.sqlite,.sqlite3" required>
+      <button class="btn-warning">{{ icon('upload', 'h-4 w-4') }} Restaurer</button></div></form>
+</div>
+<section class="card">
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Sauvegarde</th><th>Date</th><th>Origine</th><th class="num">Taille</th><th class="text-right">Actions</th></tr></thead>
+    <tbody>
+    {% for b in backups %}
+      <tr><td class="font-mono">{{ b.name }}</td><td>{{ b.created_at|dt }}</td><td><span class="badge-slate">{{ b.reason }}</span></td><td class="num">{{ b.size_label }}</td>
+        <td><div class="flex justify-end gap-2">
+          <a class="btn-secondary btn-sm" href="/admin/backups/{{ b.name }}/download">{{ icon('download', 'h-4 w-4') }} Télécharger</a>
+          <form method="post" action="/admin/backups/{{ b.name }}/restore" data-confirm="Restaurer la sauvegarde du {{ b.created_at|dt }} ? Les données actuelles seront remplacées.">{{ ui.csrf() }}
+            <button class="btn-warning btn-sm">{{ icon('upload', 'h-4 w-4') }} Restaurer</button></form>
+          <form method="post" action="/admin/backups/{{ b.name }}/delete" data-confirm="Supprimer définitivement cette sauvegarde ?">{{ ui.csrf() }}
+            <button class="btn-ghost btn-sm">{{ icon('trash', 'h-4 w-4') }}</button></form>
+        </div></td></tr>
+    {% else %}
+      <tr><td colspan="5">{{ ui.empty("Aucune sauvegarde pour l'instant.") }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}

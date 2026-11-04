@@ -1,8 +1,0 @@
-{% extends "base.html" %}
-{% block title %}Nouveau client{% endblock %}
-{% block content %}
-<h1 class="text-2xl font-bold">Nouveau client</h1>
-{% with guest=None, action="/guests", id_types=ID_TYPES %}
-  {% include "guests/_form.html" %}
-{% endwith %}
-{% endblock %}

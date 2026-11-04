@@ -1,0 +1,56 @@
+{% extends "layout/base.html" %}
+{% import "macros/ui.html" as ui with context %}
+{% block title %}Rapports{% endblock %}
+{% block head %}<script src="/static/vendor/chart.umd.min.js" defer></script>{% endblock %}
+{% block content %}
+<div class="flex flex-wrap items-end justify-between gap-3">
+  <div><h1 class="page-title">Rapports & analytique</h1>
+    <p class="page-subtitle">Données issues des nuits clôturées par l'audit de nuit (chiffres comptables définitifs).</p></div>
+  {% if user.role == 'admin' %}
+  <div class="flex gap-2">
+    <a class="btn-secondary" href="/reports/export.xlsx?start={{ start.isoformat() }}&end={{ end.isoformat() }}">{{ icon('download', 'h-4 w-4') }} Export Excel</a>
+    <a class="btn-secondary" href="/reports/export.csv?start={{ start.isoformat() }}&end={{ end.isoformat() }}">{{ icon('download', 'h-4 w-4') }} Export CSV</a>
+  </div>
+  {% endif %}
+</div>
+
+<form method="get" class="card flex flex-wrap items-end gap-3">
+  <label><span class="label">Du</span><input class="input" type="date" name="start" value="{{ start.isoformat() }}"></label>
+  <label><span class="label">Au (inclus)</span><input class="input" type="date" name="end" value="{{ end.isoformat() }}"></label>
+  <label><span class="label">Regroupement</span><select class="input" name="granularity">
+    {% for k, l in [('day', 'Jour'), ('week', 'Semaine'), ('month', 'Mois')] %}<option value="{{ k }}" {{ 'selected' if granularity == k }}>{{ l }}</option>{% endfor %}</select></label>
+  <label><span class="label">Année (tendance)</span><input class="input w-28" type="number" name="year" value="{{ year }}"></label>
+  <button class="btn-primary">Actualiser</button>
+</form>
+
+<section class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+  <div class="kpi"><span class="kpi-label">Taux d'occupation (TO)</span><span class="kpi-value">{{ kpi.occupancy }} %</span><span class="kpi-sub">{{ kpi.sold_nights }} / {{ kpi.available_nights }} nuitées</span></div>
+  <div class="kpi"><span class="kpi-label">ADR – prix moyen</span><span class="kpi-value">{{ kpi.adr|money }}</span><span class="kpi-sub">par chambre vendue</span></div>
+  <div class="kpi"><span class="kpi-label">RevPAR</span><span class="kpi-value">{{ kpi.revpar|money }}</span><span class="kpi-sub">par chambre disponible</span></div>
+  <div class="kpi"><span class="kpi-label">CA total TTC</span><span class="kpi-value">{{ kpi.total_revenue|money }}</span>
+    <span class="kpi-sub">Hébergement {{ kpi.room_revenue|money }} · Services {{ kpi.other_revenue|money }} · Taxe {{ kpi.tourist_tax|money }}</span></div>
+</section>
+
+<script type="application/json" id="report-data">{{ chart_data|tojson }}</script>
+<div class="grid gap-5 xl:grid-cols-3">
+  <section class="card xl:col-span-2"><div class="card-title">{{ icon('chart', 'h-4 w-4') }} Chiffre d'affaires par période</div>
+    <div class="h-72"><canvas data-chart="revenue" data-source="report-data" data-key="revenue"></canvas></div></section>
+  <section class="card"><div class="card-title">{{ icon('cash', 'h-4 w-4') }} Encaissements par mode</div>
+    <div class="h-72"><canvas data-chart="payments" data-source="report-data" data-key="payments"></canvas></div></section>
+</div>
+<section class="card"><div class="card-title">{{ icon('calendar', 'h-4 w-4') }} Tendance mensuelle {{ year }} : TO, ADR, RevPAR</div>
+  <div class="h-72"><canvas data-chart="occupancy" data-source="report-data" data-key="monthly"></canvas></div></section>
+
+<div class="grid gap-5 lg:grid-cols-2">
+  <section class="card"><div class="card-title">Indicateurs mensuels {{ year }}</div>
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th>Mois</th><th class="num">TO</th><th class="num">Nuitées</th><th class="num">ADR</th><th class="num">RevPAR</th><th class="num">CA héb.</th></tr></thead>
+      <tbody>{% for m in monthly %}<tr><td>{{ m.label }}</td><td class="num">{{ m.occupancy }} %</td><td class="num">{{ m.sold }}</td><td class="num">{{ m.adr|money }}</td><td class="num">{{ m.revpar|money }}</td><td class="num">{{ m.room_revenue|money }}</td></tr>{% endfor %}</tbody>
+    </table></div></section>
+  <section class="card"><div class="card-title">Encaissements du {{ start|date }} au {{ end|date }}</div>
+    <table class="table"><tbody>
+      {% for method, amount in payments.items() %}<tr><td>{{ PAYMENT_METHODS[method] }}</td><td class="num">{{ amount|money }}</td></tr>{% endfor %}
+      <tr class="font-semibold"><td>Total</td><td class="num">{{ payments.values()|sum|money }}</td></tr>
+    </tbody></table></section>
+</div>
+{% endblock %}

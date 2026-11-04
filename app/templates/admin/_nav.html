@@ -1,9 +1,5 @@
-<nav class="flex flex-wrap gap-2 text-sm no-print">
-  <a class="btn btn-sm" href="/admin">Paramètres</a>
-  <a class="btn btn-sm" href="/admin/rooms">Chambres & types</a>
-  <a class="btn btn-sm" href="/admin/rates">Tarifs saisonniers</a>
-  <a class="btn btn-sm" href="/admin/modules">Modules annexes</a>
-  <a class="btn btn-sm" href="/admin/services">Catalogue prestations</a>
-  <a class="btn btn-sm" href="/admin/companies">Entreprises</a>
-  <a class="btn btn-sm" href="/admin/users">Utilisateurs</a>
+<nav class="no-print flex flex-wrap gap-2">
+  {% for href, label, ic in [('/admin', 'Paramètres', 'cog'), ('/admin/rooms', 'Chambres & types', 'building'), ('/admin/rates', 'Tarifs saisonniers', 'calendar'), ('/admin/modules', 'Modules annexes', 'bag'), ('/admin/users', 'Utilisateurs', 'users'), ('/admin/backups', 'Sauvegardes', 'archive'), ('/admin/audit-log', "Journal d'activité", 'clock')] %}
+    <a href="{{ href }}" class="{{ 'btn-primary' if current_path == href else 'btn-secondary' }} btn-sm">{{ icon(ic, 'h-4 w-4') }} {{ label }}</a>
+  {% endfor %}
 </nav>

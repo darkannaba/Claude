@@ -1,0 +1,30 @@
+{% extends "layout/base.html" %}
+{% import "macros/ui.html" as ui with context %}
+{% block title %}Doublons{% endblock %}
+{% block content %}
+<div><div class="text-sm text-slate-500"><a href="/guests">Clients</a> / Doublons</div>
+  <h1 class="page-title">Doublons potentiels</h1>
+  <p class="page-subtitle">Les pièces d'identité identiques sont refusées à la saisie. Cette page détecte les fiches proches : même nom et date de naissance, ou même téléphone.</p></div>
+{% for group in groups %}
+<section class="card">
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Fiche</th><th>Nom</th><th>Naissance</th><th>Téléphone</th><th>Pièce</th>{% if user.role == 'admin' %}<th>Fusion</th>{% endif %}</tr></thead>
+    <tbody>
+    {% for g in group %}
+      <tr><td><a href="/guests/{{ g.id }}">n° {{ g.id }}</a></td><td>{{ g.full_name }}</td><td>{{ g.birth_date|date if g.birth_date else '—' }}</td>
+        <td>{{ g.phone }}</td><td class="text-xs">{{ g.id_type_label }} {{ g.id_number }}</td>
+        {% if user.role == 'admin' %}<td>
+          {% if not loop.first %}
+          <form method="post" action="/guests/merge" data-confirm="Fusionner la fiche n° {{ g.id }} dans la fiche n° {{ group[0].id }} ?">{{ ui.csrf() }}
+            <input type="hidden" name="keep_id" value="{{ group[0].id }}"><input type="hidden" name="remove_id" value="{{ g.id }}">
+            <button class="btn-secondary btn-sm">Fusionner dans n° {{ group[0].id }}</button></form>
+          {% else %}<span class="badge-teal">fiche conservée</span>{% endif %}
+        </td>{% endif %}</tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% else %}
+  {{ ui.empty("Aucun doublon potentiel détecté.") }}
+{% endfor %}
+{% endblock %}

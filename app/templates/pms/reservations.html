@@ -1,0 +1,45 @@
+{% extends "layout/base.html" %}
+{% import "macros/ui.html" as ui with context %}
+{% block title %}Réservations{% endblock %}
+{% block content %}
+<div class="flex flex-wrap items-end justify-between gap-3">
+  <div><h1 class="page-title">Réservations</h1><p class="page-subtitle">{{ rows|length }} résultat(s) (200 au maximum)</p></div>
+  <a class="btn-primary" href="/reservations/new">{{ icon('plus', 'h-4 w-4') }} Nouvelle réservation</a>
+</div>
+
+<form method="get" class="card no-print grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+  <label class="lg:col-span-2"><span class="label">Recherche : code, nom, téléphone, pièce</span>
+    <input class="input" name="q" value="{{ q }}" autocomplete="off"></label>
+  <label><span class="label">Statut</span>
+    <select class="input" name="status"><option value="">Tous</option>
+      {% for key, label in RES_STATUSES.items() %}<option value="{{ key }}" {{ 'selected' if status == key }}>{{ label }}</option>{% endfor %}</select></label>
+  <label><span class="label">Séjours à partir du</span><input class="input" type="date" name="start" value="{{ start }}"></label>
+  <label><span class="label">jusqu'au</span><input class="input" type="date" name="end" value="{{ end }}"></label>
+  <div class="flex gap-2 lg:col-span-5"><button class="btn-primary">{{ icon('search', 'h-4 w-4') }} Filtrer</button><a class="btn-ghost" href="/reservations">Réinitialiser</a></div>
+</form>
+
+<div class="card">
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Code</th><th>Client</th><th>Chambre</th><th>Arrivée</th><th>Départ</th><th class="num">Nuits</th><th>Canal</th><th>Statut</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td><a href="/reservations/{{ r.id }}" class="font-mono font-medium">{{ r.code }}</a></td>
+          <td><a href="/guests/{{ r.guest.id }}">{{ r.guest.full_name }}</a> {{ ui.guest_badge(r.guest) }}
+            <div class="text-xs text-slate-500">{{ r.guest.phone }}{% if r.company %} · {{ r.company.name }}{% endif %}</div></td>
+          <td>{{ r.room.number }} <span class="text-xs text-slate-500">{{ r.room_type.name }}</span></td>
+          <td>{{ r.check_in|date }}</td>
+          <td>{{ r.check_out|date }}</td>
+          <td class="num">{{ r.nights }}</td>
+          <td class="text-xs">{{ r.channel }}</td>
+          <td>{{ ui.res_badge(r.status) }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8">{{ ui.empty("Aucune réservation ne correspond à ces critères.") }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

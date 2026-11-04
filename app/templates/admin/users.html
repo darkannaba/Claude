@@ -1,37 +1,31 @@
-{% extends "base.html" %}
-{% block title %}Administration · Utilisateurs{% endblock %}
+{% extends "layout/base.html" %}
+{% import "macros/ui.html" as ui with context %}
+{% block title %}Utilisateurs{% endblock %}
 {% block content %}
-<h1 class="text-2xl font-bold">Administration</h1>
+<div><h1 class="page-title">Utilisateurs et rôles</h1>
+  <p class="page-subtitle"><strong>Administrateur</strong> : tout. <strong>Réception</strong> : séjours, clients, POS, audit de nuit, rapports. <strong>Gouvernante</strong> : housekeeping uniquement. Mots de passe hachés (Argon2) ; changement imposé à la première connexion.</p></div>
 {% include "admin/_nav.html" %}
-
 <section class="card">
-  <h2>Utilisateurs et rôles</h2>
-  <p class="muted text-sm mb-3">
-    <strong>Administrateur</strong> : tout, dont paramètres. <strong>Réception</strong> : séjours, clients, planning, encaissements.
-    <strong>Housekeeping</strong> : tableau de bord des chambres uniquement.
-  </p>
-  <div class="table-wrap"><table class="t">
-    <thead><tr><th>Identifiant</th><th>Nom affiché</th><th>Rôle</th><th>Actif</th><th>Nouveau mot de passe (min. 8)</th><th></th></tr></thead>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Identifiant</th><th>Nom affiché</th><th>Rôle</th><th>Actif</th><th>Dernière connexion</th><th>Nouveau mot de passe</th><th></th></tr></thead>
     <tbody>
     {% for u in users %}
-      <tr>
-        <td class="font-semibold">{{ u.username }}</td>
-        <td><input class="inp" form="u-{{ u.id }}" name="full_name" value="{{ u.full_name }}"></td>
-        <td><select class="inp" form="u-{{ u.id }}" name="role">{% for k, l in roles.items() %}<option value="{{ k }}" {{ 'selected' if u.role == k }}>{{ l }}</option>{% endfor %}</select></td>
-        <td><input form="u-{{ u.id }}" type="checkbox" name="active" value="1" {{ 'checked' if u.active }}></td>
-        <td><input class="inp" form="u-{{ u.id }}" type="password" name="password" autocomplete="new-password"></td>
-        <td><form id="u-{{ u.id }}" method="post" action="/admin/users/{{ u.id }}">
-          <button class="btn btn-sm" type="submit">Enregistrer</button></form></td>
-      </tr>
+      <tr><td class="font-mono font-semibold">{{ u.username }}{% if u.must_change_password %} <span class="badge-amber">à changer</span>{% endif %}</td>
+        <td><input class="input" form="u-{{ u.id }}" name="full_name" value="{{ u.full_name }}"></td>
+        <td><select class="input" form="u-{{ u.id }}" name="role">{% for k, l in ROLES.items() %}<option value="{{ k }}" {{ 'selected' if u.role == k }}>{{ l }}</option>{% endfor %}</select></td>
+        <td><input class="checkbox" form="u-{{ u.id }}" type="checkbox" name="active" value="1" {{ 'checked' if u.active }}></td>
+        <td class="text-xs">{{ u.last_login_at|dt }}</td>
+        <td><input class="input" form="u-{{ u.id }}" type="password" name="password" autocomplete="new-password" placeholder="inchangé"></td>
+        <td><form id="u-{{ u.id }}" method="post" action="/admin/users/{{ u.id }}">{{ ui.csrf() }}<button class="btn-secondary btn-sm">Enregistrer</button></form></td></tr>
     {% endfor %}
     </tbody>
   </table></div>
-  <form method="post" action="/admin/users" class="form-grid mt-4">
-    <label><span class="lbl">Identifiant</span><input class="inp" name="username" required></label>
-    <label><span class="lbl">Nom affiché</span><input class="inp" name="full_name"></label>
-    <label><span class="lbl">Rôle</span><select class="inp" name="role">{% for k, l in roles.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></label>
-    <label><span class="lbl">Mot de passe</span><input class="inp" type="password" name="password" minlength="8" required autocomplete="new-password"></label>
-    <div class="flex items-end"><button class="btn btn-primary" type="submit">Créer</button></div>
+  <form method="post" action="/admin/users" class="mt-5 grid gap-3 border-t border-slate-200 pt-4 dark:border-slate-800 sm:grid-cols-2 lg:grid-cols-5">
+    {{ ui.csrf() }}
+    {{ ui.field('Identifiant', 'username', required=true) }}{{ ui.field('Nom affiché', 'full_name') }}
+    <label><span class="label">Rôle</span><select class="input" name="role">{% for k, l in ROLES.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></label>
+    {{ ui.field('Mot de passe provisoire', 'password', type='password', required=true, extra='autocomplete="new-password" minlength="10"') }}
+    <div class="flex items-end"><button class="btn-primary w-full">{{ icon('plus', 'h-4 w-4') }} Créer</button></div>
   </form>
 </section>
 {% endblock %}

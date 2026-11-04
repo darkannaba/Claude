@@ -1,0 +1,61 @@
+{% extends "layout/base.html" %}
+{% import "macros/ui.html" as ui with context %}
+{% block title %}Catalogue POS{% endblock %}
+{% block content %}
+<div class="flex flex-wrap items-end justify-between gap-3">
+  <div><div class="text-sm text-slate-500"><a href="/pos">Points de vente</a> / Catalogue</div>
+    <h1 class="page-title">Catalogue et stock</h1>
+    <p class="page-subtitle">Prix TTC. Le stock est décrémenté à chaque vente des articles suivis (bar, café…).</p></div>
+  <form method="get" class="flex items-end gap-2"><label><span class="label">Point de vente</span>
+    <select class="input" name="outlet"><option value="">Tous</option>{% for k, l in OUTLETS.items() %}<option value="{{ k }}" {{ 'selected' if outlet == k }}>{{ l }}</option>{% endfor %}</select></label>
+    <button class="btn-secondary">Filtrer</button></form>
+</div>
+<div class="card"><div class="table-wrap"><table class="table">
+  <thead><tr><th>Article</th><th>Point de vente</th><th>Catégorie</th><th class="num">Prix TTC</th><th class="num">TVA</th><th>Stock</th><th>Mouvement de stock</th>{% if user.role == 'admin' %}<th></th>{% endif %}</tr></thead>
+  <tbody>
+  {% for item in items %}
+    <tr class="{{ 'opacity-50' if not item.active }}">
+      {% if user.role == 'admin' %}
+        <td><input class="input" form="it-{{ item.id }}" name="name" value="{{ item.name }}" required>
+          <label class="mt-1 flex items-center gap-1 text-xs"><input class="checkbox" form="it-{{ item.id }}" type="checkbox" name="active" value="1" {{ 'checked' if item.active }}> actif</label></td>
+        <td><select class="input" form="it-{{ item.id }}" name="outlet">{% for k, l in OUTLETS.items() %}<option value="{{ k }}" {{ 'selected' if item.outlet == k }}>{{ l }}</option>{% endfor %}</select></td>
+        <td><input class="input" form="it-{{ item.id }}" name="category" value="{{ item.category }}"></td>
+        <td><input class="input w-28" form="it-{{ item.id }}" type="number" min="0" name="price" value="{{ item.price }}"></td>
+        <td><input class="input w-20" form="it-{{ item.id }}" type="number" min="0" max="100" name="vat_rate" value="{{ item.vat_rate }}"></td>
+        <td><label class="flex items-center gap-1 text-xs"><input class="checkbox" form="it-{{ item.id }}" type="checkbox" name="track_stock" value="1" {{ 'checked' if item.track_stock }}> suivi</label>
+          <div class="mt-1 text-sm font-semibold {{ 'text-amber-600' if item.low_stock }}">{{ item.stock_qty if item.track_stock else '—' }}</div>
+          <input class="input mt-1 w-20" form="it-{{ item.id }}" type="number" min="0" name="low_stock_threshold" value="{{ item.low_stock_threshold }}" title="Seuil d'alerte"></td>
+      {% else %}
+        <td class="font-medium">{{ item.name }}</td><td>{{ OUTLETS[item.outlet] }}</td><td>{{ item.category }}</td>
+        <td class="num">{{ item.price|money }}</td><td class="num">{{ item.vat_rate }} %</td>
+        <td class="{{ 'font-semibold text-amber-600' if item.low_stock }}">{{ item.stock_qty if item.track_stock else '—' }}</td>
+      {% endif %}
+      <td>
+        <form method="post" action="/pos/catalog/{{ item.id }}/stock" class="flex flex-wrap gap-1">{{ ui.csrf() }}
+          <input class="input w-20" type="number" name="quantity" placeholder="± qté" required>
+          <select class="input w-36" name="reason"><option value="reappro">Réappro.</option><option value="ajustement">Ajustement</option></select>
+          <button class="btn-secondary btn-sm">OK</button>
+        </form>
+      </td>
+      {% if user.role == 'admin' %}<td><form id="it-{{ item.id }}" method="post" action="/pos/catalog/{{ item.id }}">{{ ui.csrf() }}<button class="btn-secondary btn-sm">Enregistrer</button></form></td>{% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="8">{{ ui.empty("Catalogue vide.") }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% if user.role == 'admin' %}
+<form method="post" action="/pos/catalog" class="mt-5 grid gap-3 border-t border-slate-200 pt-4 dark:border-slate-800 sm:grid-cols-3 lg:grid-cols-7">
+  {{ ui.csrf() }}
+  <label><span class="label">Point de vente</span><select class="input" name="outlet">{% for k, l in OUTLETS.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></label>
+  {{ ui.field('Libellé', 'name', required=true) }}{{ ui.field('Catégorie', 'category') }}
+  {{ ui.field('Prix TTC', 'price', type='number', required=true, extra='min="0"') }}
+  {{ ui.field('TVA % (vide = défaut)', 'vat_rate', type='number', extra='min="0" max="100"') }}
+  {{ ui.field("Seuil d'alerte", 'low_stock_threshold', 0, type='number', extra='min="0"') }}
+  <label class="flex items-end gap-2 pb-2 text-sm"><input class="checkbox" type="checkbox" name="track_stock" value="1"> Suivre le stock</label>
+  <input type="hidden" name="active" value="1">
+  <div class="sm:col-span-3 lg:col-span-7"><button class="btn-primary">{{ icon('plus', 'h-4 w-4') }} Ajouter l'article</button></div>
+</form>
+{% endif %}
+</div>
+{% endblock %}

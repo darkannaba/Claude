@@ -1,0 +1,85 @@
+{% import "macros/ui.html" as ui with context %}
+<!doctype html>
+<html lang="fr" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>{% block title %}Accueil{% endblock %} · {{ hs.hotel_name }}</title>
+  <link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/css/app.css?v={{ app_version }}">
+  <script src="/static/js/theme.js"></script>
+  <script src="/static/js/app.js?v={{ app_version }}" defer></script>
+  {% block head %}{% endblock %}
+  <script src="/static/vendor/alpine.min.js" defer></script>
+</head>
+<body class="h-full" x-data="layout">
+{% if user %}
+  <div class="flex min-h-full">
+    <!-- Barre latérale -->
+    <div class="fixed inset-0 z-30 bg-slate-900/60 lg:hidden no-print" x-show="sidebar" x-cloak @click="sidebar = false"></div>
+    <aside class="no-print fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col bg-slate-900 transition-transform lg:translate-x-0"
+           :class="sidebar ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'">
+      <div class="flex h-16 items-center gap-3 border-b border-slate-800 px-5">
+        <img src="/static/img/favicon.svg" alt="" class="h-8 w-8">
+        <div class="min-w-0">
+          <div class="truncate text-sm font-semibold text-white">{{ hs.hotel_name }}</div>
+          <div class="truncate text-xs text-slate-400 ar" dir="rtl">{{ hs.hotel_name_ar }}</div>
+        </div>
+      </div>
+      <nav class="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+        {% for item in nav %}
+          {% set active = (item.href == '/' and current_path == '/') or (item.href != '/' and current_path.startswith(item.href)) %}
+          <a href="{{ item.href }}" class="{{ 'nav-item-active' if active else 'nav-item' }}">{{ icon(item.icon) }} {{ item.label }}</a>
+        {% endfor %}
+      </nav>
+      <div class="border-t border-slate-800 p-4 text-xs text-slate-500">
+        <div>{{ today|date }} · v{{ app_version }}</div>
+        <div class="mt-1 flex items-center gap-1">{{ icon('shield', 'h-3.5 w-3.5') }} Réseau local – hors ligne</div>
+      </div>
+    </aside>
+
+    <div class="flex min-w-0 flex-1 flex-col lg:pl-64">
+      <!-- Barre supérieure -->
+      <header class="no-print sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90 sm:px-6">
+        <button type="button" class="btn-ghost lg:hidden" @click="sidebar = true" aria-label="Menu">{{ icon('menu') }}</button>
+        {% if user.role != 'housekeeping' %}
+        <form action="/search" method="get" class="relative max-w-md flex-1" role="search">
+          <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">{{ icon('search', 'h-4 w-4') }}</span>
+          <input id="global-search" class="input pl-9" name="q" placeholder="Rechercher ou scanner (F2) : réservation, QR, pièce, nom…" autocomplete="off">
+        </form>
+        {% else %}
+        <div class="flex-1"></div>
+        {% endif %}
+        <div class="ml-auto flex items-center gap-2">
+          <button type="button" class="btn-ghost" @click="toggleTheme()" :title="dark ? 'Mode clair' : 'Mode sombre'" aria-label="Thème">
+            <span x-show="!dark">{{ icon('moon') }}</span><span x-show="dark" x-cloak>{{ icon('sun') }}</span>
+          </button>
+          <div class="relative" x-data="{ open: false }" @click.outside="open = false">
+            <button type="button" class="btn-ghost" @click="open = !open">
+              <span class="flex h-8 w-8 items-center justify-center rounded-full bg-brand-600 text-sm font-semibold text-white">{{ user.display_name[:1]|upper }}</span>
+              <span class="hidden text-left sm:block"><span class="block text-sm font-medium">{{ user.display_name }}</span><span class="block text-xs text-slate-500">{{ user.role_label }}</span></span>
+            </button>
+            <div x-show="open" x-cloak class="absolute right-0 mt-2 w-56 rounded-lg border border-slate-200 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
+              <a href="/account/password" class="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-slate-700 no-underline hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700">{{ icon('key', 'h-4 w-4') }} Changer mon mot de passe</a>
+              <form method="post" action="/logout">{{ ui.csrf() }}
+                <button class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40">{{ icon('logout', 'h-4 w-4') }} Se déconnecter</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="mx-auto w-full max-w-[1600px] flex-1 space-y-5 p-4 sm:p-6">
+        {% for f in flashes %}
+          <div class="flash-{{ f.kind }} no-print">{{ icon('check' if f.kind == 'success' else 'alert', 'h-5 w-5 shrink-0') }}<span>{{ f.msg }}</span></div>
+        {% endfor %}
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+{% else %}
+  {% block public %}{% endblock %}
+{% endif %}
+</body>
+</html>

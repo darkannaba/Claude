@@ -1,25 +1,20 @@
-"""Import de tous les modèles pour l'enregistrement auprès de SQLAlchemy."""
-from app.models.admin import Company, FeatureFlag, ServiceItem, Setting, User
-from app.models.guests import ID_TYPES, Guest
-from app.models.property import ROOM_STATUSES, RatePeriod, Room, RoomType
-from app.models.reservations import (
-    ACTIVE_STATUSES,
-    CHARGE_CATEGORIES,
-    PAYMENT_KINDS,
-    PAYMENT_METHODS,
-    STATUS_LABELS,
-    Charge,
-    Companion,
-    Invoice,
-    Payment,
-    Reservation,
-    StaySegment,
-)
+"""Enregistrement de tous les modèles ORM auprès de ``Base.metadata``."""
+from app.models.audit import AuditLog, NightAuditRun
+from app.models.booking import ACTIVE_STATUSES, CHANNELS, RES_STATUSES, Companion, Reservation, StaySegment
+from app.models.customer import GENDERS, GUEST_STATUSES, ID_TYPES, ID_TYPES_AR, Company, Guest, normalize_id_number
+from app.models.invoice import ITEM_KINDS, PAYMENT_KINDS, PAYMENT_METHODS, FolioItem, Invoice, Payment
+from app.models.pos import OUTLETS, ORDER_STATUSES, STOCK_REASONS, PosItem, PosOrder, PosOrderLine, StockMovement
+from app.models.room import ROOM_STATUSES, RatePeriod, Room, RoomType
+from app.models.system import FeatureFlag, Setting
+from app.models.user import ROLES, User
 
 __all__ = [
-    "User", "Setting", "FeatureFlag", "Company", "ServiceItem",
-    "RoomType", "Room", "RatePeriod", "ROOM_STATUSES",
-    "Guest", "ID_TYPES",
-    "Reservation", "StaySegment", "Companion", "Payment", "Charge", "Invoice",
-    "ACTIVE_STATUSES", "STATUS_LABELS", "PAYMENT_KINDS", "PAYMENT_METHODS", "CHARGE_CATEGORIES",
+    "AuditLog", "NightAuditRun",
+    "ACTIVE_STATUSES", "CHANNELS", "RES_STATUSES", "Companion", "Reservation", "StaySegment",
+    "GENDERS", "GUEST_STATUSES", "ID_TYPES", "ID_TYPES_AR", "Company", "Guest", "normalize_id_number",
+    "ITEM_KINDS", "PAYMENT_KINDS", "PAYMENT_METHODS", "FolioItem", "Invoice", "Payment",
+    "OUTLETS", "ORDER_STATUSES", "STOCK_REASONS", "PosItem", "PosOrder", "PosOrderLine", "StockMovement",
+    "ROOM_STATUSES", "RatePeriod", "Room", "RoomType",
+    "FeatureFlag", "Setting",
+    "ROLES", "User",
 ]

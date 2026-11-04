@@ -4,10 +4,17 @@ venv/
 __pycache__/
 *.pyc
 .pytest_cache/
+.coverage
+htmlcov/
+node_modules/
 
-# Données locales (base de travail, clé de session, secrets)
-data/hotel.db
+# Données d'exploitation (jamais versionnées)
+data/*.db
+data/*.db-wal
+data/*.db-shm
 data/.secret_key
+backups/
+logs/
 .env
 
 # Fichiers générés

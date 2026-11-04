@@ -1,0 +1,22 @@
+{% extends "layout/base.html" %}
+{% import "macros/ui.html" as ui with context %}
+{% block title %}Impayés{% endblock %}
+{% block content %}
+<div><div class="text-sm text-slate-500"><a href="/guests">Clients</a> / Impayés</div>
+  <h1 class="page-title">Séjours clôturés avec solde impayé</h1>
+  <p class="page-subtitle">Total dû : <strong>{{ total|money }}</strong>. Ces clients sont signalés automatiquement lors d'une nouvelle réservation.</p></div>
+<div class="card"><div class="table-wrap"><table class="table">
+  <thead><tr><th>Réservation</th><th>Client</th><th>Entreprise</th><th>Départ</th><th>Facture</th><th class="num">Solde dû</th></tr></thead>
+  <tbody>
+  {% for res, balance in rows %}
+    <tr><td><a href="/reservations/{{ res.id }}" class="font-mono">{{ res.code }}</a></td>
+      <td><a href="/guests/{{ res.guest.id }}">{{ res.guest.full_name }}</a><div class="text-xs text-slate-500">{{ res.guest.phone }}</div></td>
+      <td>{{ res.company.name if res.company else '—' }}</td><td>{{ res.check_out|date }}</td>
+      <td class="font-mono text-xs">{{ res.final_invoice.number if res.final_invoice else '—' }}</td>
+      <td class="num font-semibold text-rose-600">{{ balance|money }}</td></tr>
+  {% else %}
+    <tr><td colspan="6">{{ ui.empty("Aucun impayé.") }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div></div>
+{% endblock %}

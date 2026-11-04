@@ -1,0 +1,108 @@
+{% extends "layout/base.html" %}
+{% import "macros/ui.html" as ui with context %}
+{% block title %}Tableau de bord{% endblock %}
+{% block head %}<script src="/static/vendor/chart.umd.min.js" defer></script>{% endblock %}
+{% block content %}
+<div class="flex flex-wrap items-end justify-between gap-3">
+  <div>
+    <h1 class="page-title">Tableau de bord</h1>
+    <p class="page-subtitle">{{ today|weekday }} {{ today|date }} · {{ rooms|length }} chambres actives</p>
+  </div>
+  <div class="flex flex-wrap gap-2">
+    <a class="btn-primary" href="/reservations/new">{{ icon('plus', 'h-4 w-4') }} Nouvelle réservation</a>
+    <a class="btn-secondary" href="/planning">{{ icon('calendar', 'h-4 w-4') }} Planning</a>
+  </div>
+</div>
+
+{% if pending %}
+<div class="flash-warning">{{ icon('moon', 'h-5 w-5 shrink-0') }}
+  <span>{{ pending|length }} journée(s) non clôturée(s) par l'audit de nuit (depuis le {{ pending[0]|date }}).
+    <a href="/night-audit" class="font-semibold underline">Lancer l'audit</a></span>
+</div>
+{% endif %}
+
+<section class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+  <div class="kpi"><span class="kpi-label">Occupation actuelle</span><span class="kpi-value">{{ occupancy }} %</span>
+    <span class="kpi-sub">{{ counts.get('occupied', 0) }} / {{ rooms|length }} chambres occupées</span></div>
+  <div class="kpi"><span class="kpi-label">Arrivées à traiter</span><span class="kpi-value">{{ arrivals|length }}</span>
+    <span class="kpi-sub">{{ departures|length }} départ(s) prévu(s) aujourd'hui</span></div>
+  <div class="kpi"><span class="kpi-label">Encaissements du jour</span><span class="kpi-value">{{ cash_today|money }}</span>
+    <span class="kpi-sub">Espèces : {{ payments_today.get('especes', 0)|money }} · CIB : {{ payments_today.get('cib', 0)|money }}</span></div>
+  <div class="kpi"><span class="kpi-label">À nettoyer / maintenance</span><span class="kpi-value">{{ counts.get('dirty', 0) }} / {{ counts.get('maintenance', 0) }}</span>
+    <span class="kpi-sub"><a href="/housekeeping">Ouvrir le housekeeping</a></span></div>
+  <div class="kpi"><span class="kpi-label">TO du mois (nuits clôturées)</span><span class="kpi-value">{{ month_kpi.occupancy }} %</span>
+    <span class="kpi-sub">{{ month_kpi.sold_nights }} nuitées vendues</span></div>
+  <div class="kpi"><span class="kpi-label">ADR du mois</span><span class="kpi-value">{{ month_kpi.adr|money }}</span>
+    <span class="kpi-sub">Prix moyen par chambre vendue</span></div>
+  <div class="kpi"><span class="kpi-label">RevPAR du mois</span><span class="kpi-value">{{ month_kpi.revpar|money }}</span>
+    <span class="kpi-sub">Revenu par chambre disponible</span></div>
+  <div class="kpi"><span class="kpi-label">CA hébergement du mois</span><span class="kpi-value">{{ month_kpi.room_revenue|money }}</span>
+    <span class="kpi-sub">Services : {{ month_kpi.other_revenue|money }}</span></div>
+</section>
+
+<section class="grid gap-5 xl:grid-cols-3">
+  <div class="card xl:col-span-2">
+    <div class="card-title">{{ icon('building', 'h-4 w-4') }} État des chambres</div>
+    <div class="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-6 2xl:grid-cols-10">
+      {% for room in rooms %}
+        {% set occ = occupant.get(room.id) %}
+        <a href="{{ '/reservations/' ~ occ.id if occ else '/reservations/new?room_type_id=' ~ room.room_type_id ~ '&room_id=' ~ room.id }}"
+           class="room-tile room-{{ room.status }}" title="{{ room.room_type.name }} – {{ room.status_label }}">
+          <div class="flex items-center justify-between"><span class="text-base font-bold">{{ room.number }}</span>
+            <span class="text-[10px] font-semibold uppercase text-slate-400">{{ room.room_type.code }}</span></div>
+          <div class="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">{{ occ.guest.last_name if occ else room.status_label }}</div>
+        </a>
+      {% endfor %}
+    </div>
+    <div class="mt-4 flex flex-wrap gap-2 text-xs">
+      {% for status, label in ROOM_STATUSES.items() %}{{ ui.room_badge(status) }} <span class="text-slate-500">{{ counts.get(status, 0) }}</span>{% endfor %}
+    </div>
+  </div>
+
+  <div class="space-y-5">
+    <div class="card">
+      <div class="card-title">{{ icon('check', 'h-4 w-4') }} Arrivées ({{ arrivals|length }})</div>
+      {% if arrivals %}
+      <ul class="divide-y divide-slate-100 dark:divide-slate-800">
+        {% for r in arrivals %}
+        <li class="flex items-center justify-between gap-2 py-2 text-sm">
+          <div class="min-w-0">
+            <a href="/reservations/{{ r.id }}" class="font-medium">{{ r.guest.full_name }}</a> {{ ui.guest_badge(r.guest) }}
+            <div class="text-xs text-slate-500">Ch. {{ r.room.number }} · {{ r.nights }} nuit(s){% if r.check_in < today %} · <span class="text-amber-600">prévue le {{ r.check_in|date }}</span>{% endif %}</div>
+          </div>
+          <form method="post" action="/reservations/{{ r.id }}/checkin">{{ ui.csrf() }}<button class="btn-success btn-sm">Check-in</button></form>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}{{ ui.empty("Aucune arrivée en attente.") }}{% endif %}
+    </div>
+    <div class="card">
+      <div class="card-title">{{ icon('logout', 'h-4 w-4') }} Départs ({{ departures|length }})</div>
+      {% if departures %}
+      <ul class="divide-y divide-slate-100 dark:divide-slate-800">
+        {% for r in departures %}
+        <li class="flex items-center justify-between gap-2 py-2 text-sm">
+          <a href="/reservations/{{ r.id }}" class="font-medium">{{ r.guest.full_name }}</a>
+          <span class="text-xs text-slate-500">Ch. {{ r.room.number }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}{{ ui.empty("Aucun départ prévu aujourd'hui.") }}{% endif %}
+    </div>
+    {% if low_stock %}
+    <div class="card">
+      <div class="card-title">{{ icon('alert', 'h-4 w-4') }} Stock bas</div>
+      <ul class="space-y-1 text-sm">
+        {% for item in low_stock %}<li class="flex justify-between"><span>{{ item.name }}</span><span class="badge-amber">{{ item.stock_qty }}</span></li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-title">{{ icon('chart', 'h-4 w-4') }} Chiffre d'affaires des 14 derniers jours (écritures figées)</div>
+  <div class="h-64"><canvas data-chart="revenue" data-source="dashboard-chart"></canvas></div>
+  <script type="application/json" id="dashboard-chart">{{ chart|tojson }}</script>
+</section>
+{% endblock %}

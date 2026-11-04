@@ -1,104 +1,104 @@
-"""Dépendances FastAPI communes : authentification, rôles, rendu des templates, flash messages."""
-from datetime import date
-from pathlib import Path
+"""Dépendances FastAPI : session BD, utilisateur courant, rôles (RBAC), CSRF, actions métier."""
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable
+from typing import Annotated
 
 from fastapi import Depends, Request
 from fastapi.responses import RedirectResponse
-from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
-from app.models.admin import User
-from app.models.guests import ID_TYPES
-from app.models.property import ROOM_STATUSES
-from app.models.reservations import CHARGE_CATEGORIES, PAYMENT_KINDS, PAYMENT_METHODS, STATUS_LABELS
-from app.services.settings import MODULES, load_settings, today_of
-
-TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+from app.database import get_session
+from app.models.user import User
+from app.services.common import BusinessError
+from app.services.security import CSRF_FORM_FIELD, CSRF_HEADER, csrf_tokens_match
+from app.templating import flash
 
 
 class LoginRequired(Exception):
-    """Utilisateur non connecté : redirigé vers /login."""
+    def __init__(self, next_path: str = "/"):
+        self.next_path = next_path
+
+
+class PasswordChangeRequired(Exception):
+    pass
 
 
 class AccessDenied(Exception):
-    """Rôle insuffisant : réponse 403."""
+    pass
 
 
-def _money(value, symbol: str = "DA") -> str:
-    try:
-        number = int(round(float(value or 0)))
-    except (TypeError, ValueError):
-        number = 0
-    return f"{number:,}".replace(",", " ") + f" {symbol}"
+class CsrfError(Exception):
+    pass
 
 
-def _date(value) -> str:
-    return value.strftime("%d/%m/%Y") if value else "—"
+DbSession = Annotated[AsyncSession, Depends(get_session)]
+
+PASSWORD_EXEMPT_PATHS = {"/account/password", "/logout"}
 
 
-def _dt(value) -> str:
-    return value.strftime("%d/%m/%Y %H:%M") if value else "—"
-
-
-templates.env.filters.update(money=_money, date=_date, dt=_dt)
-templates.env.globals.update(
-    ROOM_STATUSES=ROOM_STATUSES,
-    STATUS_LABELS=STATUS_LABELS,
-    PAYMENT_KINDS=PAYMENT_KINDS,
-    PAYMENT_METHODS=PAYMENT_METHODS,
-    CHARGE_CATEGORIES=CHARGE_CATEGORIES,
-    ID_TYPES=ID_TYPES,
-    MODULES=MODULES,
-)
-
-
-def parse_date(value: str | None) -> date | None:
-    try:
-        return date.fromisoformat(value or "")
-    except ValueError:
-        return None
-
-
-def flash(request: Request, message: str, kind: str = "ok") -> None:
-    request.session.setdefault("flashes", []).append({"kind": kind, "msg": message})
-
-
-def get_user(request: Request, db: Session = Depends(get_db)) -> User:
+async def current_user(request: Request, db: DbSession) -> User:
     uid = request.session.get("uid")
-    user = db.get(User, uid) if uid else None
+    user = await db.get(User, uid) if uid else None
     if user is None or not user.active:
-        raise LoginRequired()
+        request.session.pop("uid", None)
+        raise LoginRequired(request.url.path)
     request.state.user = user
+    if user.must_change_password and request.url.path not in PASSWORD_EXEMPT_PATHS:
+        raise PasswordChangeRequired()
     return user
 
 
-def roles(*allowed: str):
-    def dependency(user: User = Depends(get_user)) -> User:
-        if user.role not in allowed:
+def require_roles(*roles: str):
+    async def dependency(user: Annotated[User, Depends(current_user)]) -> User:
+        if user.role not in roles:
             raise AccessDenied()
         return user
 
     return dependency
 
 
-any_user = get_user
-staff = roles("admin", "reception")
-admin_only = roles("admin")
-housekeeping_team = roles("admin", "reception", "housekeeping")
+AnyUser = Annotated[User, Depends(current_user)]
+StaffUser = Annotated[User, Depends(require_roles("admin", "reception"))]
+AdminUser = Annotated[User, Depends(require_roles("admin"))]
+HousekeepingUser = Annotated[User, Depends(require_roles("admin", "reception", "housekeeping"))]
+
+UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
-def render(request: Request, db: Session, name: str, status_code: int = 200, **ctx):
-    settings = load_settings(db)
-    ctx.update(
-        s=settings,
-        user=getattr(request.state, "user", None),
-        flashes=request.session.pop("flashes", []),
-        today=today_of(settings),
-    )
-    return templates.TemplateResponse(request, name, ctx, status_code=status_code)
+async def csrf_protect(request: Request) -> None:
+    """Toute requête modifiante doit porter le jeton CSRF de la session (champ de formulaire ou en-tête)."""
+    if request.method not in UNSAFE_METHODS:
+        return
+    token = request.headers.get(CSRF_HEADER)
+    if not token:
+        content_type = request.headers.get("content-type", "")
+        if "form" in content_type:
+            form = await request.form()
+            token = form.get(CSRF_FORM_FIELD)
+    if not csrf_tokens_match(request.session, token if isinstance(token, str) else None):
+        raise CsrfError()
 
 
-def redirect_to(url: str) -> RedirectResponse:
+async def attempt(request: Request, db: AsyncSession, action: Callable[[], Awaitable[object]], ok_message: str) -> bool:
+    """Exécute une action métier : commit et message de succès, ou rollback et message d'erreur."""
+    try:
+        await action()
+        await db.commit()
+    except BusinessError as exc:
+        await db.rollback()
+        flash(request, str(exc), "error")
+        return False
+    flash(request, ok_message, "success")
+    return True
+
+
+def redirect(url: str) -> RedirectResponse:
     return RedirectResponse(url, status_code=303)
+
+
+def safe_next(value: str | None, default: str = "/") -> str:
+    """Évite les redirections ouvertes : seuls les chemins internes sont acceptés."""
+    if value and value.startswith("/") and not value.startswith("//") and "\\" not in value:
+        return value
+    return default

@@ -1,0 +1,15 @@
+{
+  "name": "hotel-pms-annaba-assets",
+  "private": true,
+  "description": "Compilation locale des assets front (Tailwind CSS). Les fichiers compilés sont livrés dans app/static : Node n'est requis que pour modifier le design.",
+  "scripts": {
+    "build:css": "tailwindcss -c tailwind.config.js -i app/static/src/input.css -o app/static/css/app.css --minify",
+    "watch:css": "tailwindcss -c tailwind.config.js -i app/static/src/input.css -o app/static/css/app.css --watch",
+    "vendor": "node scripts/copy_vendor.js"
+  },
+  "devDependencies": {
+    "alpinejs": "3.17.5",
+    "chart.js": "4.6.1",
+    "tailwindcss": "3.4.19"
+  }
+}
