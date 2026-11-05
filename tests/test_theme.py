@@ -2,6 +2,7 @@
 import asyncio
 import re
 from io import BytesIO
+from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -568,3 +569,223 @@ async def test_service_functions_direct(db):
     assert data["accent"][600] == "#7c3aed" and data["on_primary"] == "#ffffff"
     assert data["font_stack_rtl"].startswith('"Noto Sans Arabic"')
     await db.rollback()
+
+
+# ---------------------------------------------------------------- SVG : animations SMIL et liens externes
+SMIL_SVGS = {
+    "set-xlink-href": b'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">'
+                      b'<a><set attributeName="xlink:href" to="https://evil.example/"/><rect width="9" height="9"/></a>'
+                      b'</svg>',
+    "set-href-protocol-relative": b'<svg xmlns="http://www.w3.org/2000/svg"><a>'
+                                  b'<set attributeName="href" to="//evil.example"/><rect width="9" height="9"/></a></svg>',
+    "set-href-uppercase": b'<svg xmlns="http://www.w3.org/2000/svg"><a><set attributeName=" HREF " to="#x"/></a></svg>',
+    "animate-motion-href": b'<svg xmlns="http://www.w3.org/2000/svg"><a>'
+                           b'<animateMotion attributeName="href" values="https://evil.example/"/></a></svg>',
+    "animate-transform-href": b'<svg xmlns="http://www.w3.org/2000/svg"><a>'
+                              b'<animateTransform attributeName="xlink:href" to="https://evil.example/"/></a></svg>',
+    "animate-onclick": b'<svg xmlns="http://www.w3.org/2000/svg"><rect>'
+                       b'<animate attributeName="ONCLICK" to="alert(1)"/></rect></svg>',
+    "discard-href": b'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">'
+                    b'<discard xlink:href="https://evil.example/"/></svg>',
+    "a-external": b'<svg xmlns="http://www.w3.org/2000/svg"><a href="https://evil.example/"><rect/></a></svg>',
+    "a-protocol-relative": b'<svg xmlns="http://www.w3.org/2000/svg"><a href="//evil.example"><rect/></a></svg>',
+    "a-xlink-external": b'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">'
+                        b'<a xlink:href="evil.html"><rect/></a></svg>',
+    "a-data-uri": b'<svg xmlns="http://www.w3.org/2000/svg">'
+                  b'<a href="data:image/png;base64,iVBORw0KGgo="><rect/></a></svg>',
+}
+
+
+@pytest.mark.parametrize("name", sorted(SMIL_SVGS))
+def test_svg_smil_animations_and_external_links_rejected(name):
+    with pytest.raises(BusinessError, match="SVG refusé"):
+        tm.sanitize_svg(SMIL_SVGS[name])
+
+
+def test_svg_harmless_animations_and_fragments_accepted():
+    svg = (b'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 9 9">'
+           b'<rect id="r" width="9" height="9"><animate attributeName="opacity" from="0" to="1" dur="1s"/>'
+           b'<animateTransform attributeName="transform" type="rotate" from="0" to="90" dur="2s"/></rect>'
+           b'<a href="#r"><use xlink:href="#r"/></a></svg>')
+    assert tm.sanitize_svg(svg).startswith(b'<?xml version="1.0" encoding="UTF-8"?>\n<svg')
+
+
+def test_svg_with_external_link_cannot_be_uploaded(admin, anonymous):
+    upload(admin, "logo", SMIL_SVGS["set-xlink-href"], "evil.svg", "image/svg+xml")
+    assert current_theme().logo_file == ""
+    assert "SVG refusé" in flashes(admin)
+    assert anonymous.get("/branding/logo").status_code == 404
+
+
+# ---------------------------------------------------------------- téléversements concurrents
+def _slow_reader(data: bytes):
+    async def read(_size: int = -1) -> bytes:
+        await asyncio.sleep(0.01)
+        return data
+    return read
+
+
+async def test_concurrent_uploads_leave_no_orphan_and_distinct_versions():
+    from types import SimpleNamespace
+
+    async with SessionLocal() as session:
+        start = (await tm.get_theme(session)).version
+        await session.commit()
+
+    async def one(size):
+        async with SessionLocal() as session:
+            theme = await tm.save_image(session, "logo", SimpleNamespace(read=_slow_reader(image_bytes(size))))
+            name, version = theme.logo_file, theme.version
+            await asyncio.sleep(0.01)
+            await session.commit()
+            return name, version
+
+    results = await asyncio.gather(one((200, 100)), one((300, 80)), one((120, 60)))
+    versions = sorted(version for _, version in results)
+    assert versions == [start + 1, start + 2, start + 3]  # une version distincte par enregistrement
+    async with SessionLocal() as session:
+        stored = (await session.get(ThemeSettings, tm.THEME_ID)).logo_file
+        assert (await session.get(ThemeSettings, tm.THEME_ID)).version == start + 3
+    assert stored in {name for name, _ in results}
+    assert (tm.branding_dir() / stored).is_file()  # fichier référencé présent
+    on_disk = sorted(path.name for path in tm.branding_dir().iterdir() if tm.FILE_NAME_RE.match(path.name))
+    assert on_disk == [stored]  # aucun fichier orphelin
+
+
+async def test_orphan_branding_files_purged_after_successful_save():
+    from types import SimpleNamespace
+
+    stray = tm.branding_dir() / "favicon-dddddddddddd.png"
+    stray.parent.mkdir(parents=True, exist_ok=True)
+    stray.write_bytes(image_bytes())
+    async with SessionLocal() as session:  # échec : rien n'est purgé, le nouveau fichier est retiré
+        theme = await tm.save_image(session, "logo", SimpleNamespace(read=_slow_reader(image_bytes())))
+        failed = theme.logo_file
+        await session.rollback()
+    assert stray.exists() and not (tm.branding_dir() / failed).exists()
+    async with SessionLocal() as session:
+        theme = await tm.save_image(session, "logo", SimpleNamespace(read=_slow_reader(image_bytes())))
+        kept = theme.logo_file
+        await session.commit()
+    assert not stray.exists() and (tm.branding_dir() / kept).is_file()
+
+
+# ---------------------------------------------------------------- cache de la charte
+class _SqlCounter:
+    def __init__(self):
+        from app.database import engine
+        self.engine = engine.sync_engine
+        self.statements: list[str] = []
+
+    def _record(self, _conn, _cursor, statement, *_args):
+        self.statements.append(statement)
+
+    def __enter__(self):
+        from sqlalchemy import event
+        event.listen(self.engine, "before_cursor_execute", self._record)
+        return self
+
+    def __exit__(self, *_exc):
+        from sqlalchemy import event
+        event.remove(self.engine, "before_cursor_execute", self._record)
+
+    def theme(self, verb: str = "") -> list[str]:
+        return [s for s in self.statements if "theme_settings" in s and s.lstrip().upper().startswith(verb)]
+
+
+def test_theme_cached_between_renders_and_invalidated_on_change(admin):
+    admin.get("/")  # remplit le cache
+    with _SqlCounter() as first:
+        assert admin.get("/").status_code == 200
+    with _SqlCounter() as second:
+        assert admin.get("/").status_code == 200
+        assert admin.get(CSS_URL).status_code == 200
+    assert second.theme() == [], second.theme()
+    assert first.theme() == []
+
+    admin.form("/admin/theme/colors", {"primary_color": "#7c3aed"})
+    page = admin.get("/")
+    version = current_theme().version
+    assert f"{CSS_URL}?v={version}" in page.text
+    assert css_var(admin.get(CSS_URL).text, "color-primary") == "#7c3aed"
+    with _SqlCounter() as third:
+        admin.get("/")
+    assert third.theme() == []
+
+
+def test_direct_database_change_invalidates_cache(anonymous):
+    anonymous.get(CSS_URL)
+
+    async def change():
+        async with SessionLocal() as db:
+            theme = await tm.get_theme(db)
+            theme.secondary_color = "#eab308"
+            await db.commit()
+
+    asyncio.run(change())
+    assert css_var(anonymous.get(CSS_URL).text, "color-secondary") == "#eab308"
+
+
+def test_get_requests_never_insert_missing_theme_row(admin, anonymous):
+    async def drop():
+        async with SessionLocal() as db:
+            existing = await db.get(ThemeSettings, tm.THEME_ID)
+            if existing is not None:
+                await db.delete(existing)
+            await db.commit()
+
+    async def count():
+        async with SessionLocal() as db:
+            return len((await db.scalars(select(ThemeSettings))).all())
+
+    asyncio.run(drop())
+    try:
+        with _SqlCounter() as counter:
+            assert admin.get("/").status_code == 200
+            assert admin.get("/admin/theme").status_code == 200
+            response = anonymous.get(CSS_URL)
+            assert anonymous.get("/login").status_code == 200
+            assert anonymous.get("/branding/logo").status_code == 404
+        assert response.status_code == 200 and css_var(response.text, "color-primary") == "#0d9488"
+        assert counter.theme("INSERT") == [] and counter.theme("UPDATE") == []
+        assert asyncio.run(count()) == 0
+    finally:
+        asyncio.run(tm.ensure_theme())
+    assert asyncio.run(count()) == 1
+
+
+async def test_restore_invalidates_theme_cache(db):
+    from app.services import backup_manager
+
+    async with SessionLocal() as session:
+        await tm.update_colors(session, {"primary_color": "#7c3aed"})
+        await session.commit()
+    hs = await load_hotel_settings(db)
+    (job,) = await backup_manager.run_backup(db, hs, destinations=["local"])
+    await db.commit()
+    async with SessionLocal() as session:
+        await tm.update_colors(session, {"primary_color": "#b91c1c"})
+        await session.commit()
+    async with SessionLocal() as session:
+        assert (await tm.load_theme(session)).primary_color == "#b91c1c"  # instantané en cache
+    await backup_manager.restore_job(db, job.id, hs, None)
+    await db.commit()
+    async with SessionLocal() as session:
+        assert (await tm.load_theme(session)).primary_color == "#7c3aed"
+
+
+def test_font_faces_scanned_once(tmp_path, monkeypatch):
+    (tmp_path / "inter.woff2").write_bytes(b"wOF2")
+    monkeypatch.setattr(tm, "UI_FONTS_DIR", tmp_path)
+    tm.invalidate_theme_cache()
+    scans = []
+    original = Path.glob
+
+    def counting_glob(self, pattern):
+        scans.append(self)
+        return original(self, pattern)
+
+    monkeypatch.setattr(Path, "glob", counting_glob)
+    for _ in range(3):
+        assert "@font-face" in tm.build_css(ThemeSettings(id=1, version=3, **tm.DEFAULT_THEME))
+    assert len(scans) == 1

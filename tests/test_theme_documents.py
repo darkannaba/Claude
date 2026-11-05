@@ -441,6 +441,56 @@ def test_pdf_routes_use_the_theme(stay, admin):
         assert "ZQF" in text_of(response.content), url
 
 
+def test_pdf_get_routes_never_write_missing_theme_row(stay):
+    """Ligne de charte absente (sauvegarde antérieure à la migration 0004) : les GET de PDF lisent les valeurs
+    par défaut sans INSERT (pas de verrou d'écriture SQLite) et sans vider le cache de la charte."""
+    from sqlalchemy import event
+
+    from app.database import engine
+    from app.models import ThemeSettings
+
+    async def drop():
+        async with SessionLocal() as db:
+            existing = await db.get(ThemeSettings, tm.THEME_ID)
+            if existing is not None:
+                await db.delete(existing)
+            await db.commit()
+
+    async def count():
+        async with SessionLocal() as db:
+            return len((await db.scalars(select(ThemeSettings))).all())
+
+    statements: list[str] = []
+
+    def record(_conn, _cursor, statement, *_args):
+        statements.append(statement)
+
+    reception = stay["reception"]
+    urls = [f"{stay['url']}/police.pdf", f"{stay['url']}/invoice.pdf", f"{stay['url']}/invoice.pdf?format=ticket",
+            f"/pos/orders/{stay['order_id']}/ticket.pdf",
+            f"/night-audit/{(stay['today'] - timedelta(days=1)).isoformat()}/report.pdf"]
+    run(drop())
+    sync_engine = engine.sync_engine
+    try:
+        reception.get(urls[0])  # remplit le cache avec les valeurs par défaut
+        generation = tm._cache["generation"]
+        event.listen(sync_engine, "before_cursor_execute", record)
+        try:
+            for url in urls * 2:
+                response = reception.get(url)
+                assert response.status_code == 200 and response.content.startswith(b"%PDF"), url
+        finally:
+            event.remove(sync_engine, "before_cursor_execute", record)
+        writes = [s for s in statements if "theme_settings" in s and s.lstrip().upper().startswith(("INSERT", "UPDATE"))]
+        assert writes == [], writes
+        assert [s for s in statements if "theme_settings" in s] == []  # instantané en cache, aucune relecture
+        assert tm._cache["generation"] == generation
+        assert run(count()) == 0
+    finally:
+        run(tm.ensure_theme())
+    assert run(count()) == 1
+
+
 def test_print_routes_pass_the_theme(stay, admin, monkeypatch):
     set_documents(admin, **DOC_TEXTS)
     assert upload(admin, "logo", png_bytes()).status_code == 303
@@ -513,3 +563,61 @@ def test_pdf_generator_is_an_alias_of_pdf():
     from app.services.pdf_generator import invoice_pdf, police_form_pdf
     assert pdf_generator is pdf
     assert invoice_pdf is pdf.invoice_pdf and police_form_pdf is pdf.police_form_pdf
+
+
+# ---------------------------------------------------------------- caractères de contrôle (injection ESC/POS)
+ESC_POS_ATTACK = "Bienvenue\x1bp\x00\x19\xfa\x1b@\x1dV\x00\x07\x00 fin"
+
+
+def test_document_texts_strip_control_characters(admin):
+    set_documents(admin, slogan=ESC_POS_ATTACK, slogan_ar="شعار\x1b",
+                  document_header="Ligne 1\x1bp\x00\x19\nLigne\t2\r\nLigne 3\x85",
+                  document_footer="Pied\x1b@\x00 final")
+    theme = current_theme()
+    for field in ("slogan", "slogan_ar", "document_header", "document_footer"):
+        value = getattr(theme, field)
+        assert not any(unicodedata.category(ch) == "Cc" and ch != "\n" for ch in value), (field, value)
+    assert theme.slogan.startswith("Bienvenue") and theme.slogan.endswith("fin")
+    assert theme.document_header == "Ligne 1p\nLigne 2\nLigne 3"
+    assert theme.document_footer == "Pied@ final"
+
+
+def _forbidden_controls(data: bytes, printer_width: int) -> list[bytes]:
+    """Octets de contrôle du flux qui ne proviennent pas des commandes émises par EscPos."""
+    reference = printing.EscPos(printer_width)
+    commands = {
+        bytes(reference.buffer),
+        b"\x1ba\x00", b"\x1ba\x01", b"\x1ba\x02", b"\x1bE\x01", b"\x1bE\x00", b"\x1d!\x11", b"\x1d!\x00",
+        b"\x1dVA\x03",
+    }
+    commands |= {b"\x1bd" + bytes([n]) for n in range(1, 10)}
+    stripped = data
+    for command in sorted(commands, key=len, reverse=True):
+        stripped = stripped.replace(command, b"")
+    return [bytes([b]) for b in stripped if b < 32 and b != 10 or b == 127]
+
+
+def test_escpos_never_emits_control_characters_from_text(stay):
+    printer = printing.EscPos(42)
+    printer.text("Client\x1bp\x00\x19\xfa").pair("Article\x1b@", "12\x00,00").text("a\nb\tc\x07")
+    for line in printing._wrapped("Pied\x1b@\x1dV\x00 final", 42):
+        printer.text(line)
+    data = printer.bytes()
+    assert data.count(b"\x1b") == 1 and b"\x00" not in data and b"\x1d" not in data and b"\x07" not in data
+    assert b"Clientp" in data and b"a\nb c\n" in data
+
+    async def receipt_with_hostile_texts():
+        from app.models.theme import ThemeSettings
+        async with SessionLocal() as db:
+            hs = await load_hotel_settings(db)
+            res = await load_reservation(db, stay["res_id"])
+            view = invoice_view(res, hs, await load_calendar(db, hs), now_of(hs))
+            view.customer_name = "Client\x1bp\x00\x19\xfa"
+            # Charte modifiée à la main en base : les textes contiennent des commandes ESC/POS
+            theme = ThemeSettings(id=1, version=1, **{**tm.DEFAULT_THEME, "slogan": ESC_POS_ATTACK,
+                                                       "document_footer": "Pied\x1b@\x00"})
+            return printing.invoice_receipt(view, hs, theme=theme), hs.receipt_width_chars
+
+    data, width = run(receipt_with_hostile_texts())
+    assert _forbidden_controls(data, width) == []
+    assert b"\x1bp" not in data and b"Bienvenue" in data

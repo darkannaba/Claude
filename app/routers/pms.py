@@ -442,7 +442,7 @@ def _pdf(content: bytes, filename: str) -> Response:
 async def police_form(db: DbSession, user: StaffUser, res_id: int, lang: str = "bi"):
     res = await _reservation(db, res_id)
     hs = await load_hotel_settings(db)
-    theme = await theme_manager.get_theme(db)
+    theme = await theme_manager.load_theme(db)  # lecture seule : aucune écriture dans un GET
     return _pdf(pdf.police_form_pdf(hs, res, now_of(hs), lang=pdf.doc_lang(lang), theme=theme),
                 f"fiche-police-{res.code}.pdf")
 
@@ -455,7 +455,7 @@ async def invoice_document(db: DbSession, user: StaffUser, res_id: int, format: 
     hs = await load_hotel_settings(db)
     view = invoice_view(res, hs, await load_calendar(db, hs), now_of(hs))
     fmt = "ticket" if format == "ticket" else "a4"
-    theme = await theme_manager.get_theme(db)
+    theme = await theme_manager.load_theme(db)  # lecture seule : aucune écriture dans un GET
     return _pdf(pdf.invoice_pdf(hs, view, fmt, lang=pdf.doc_lang(lang), theme=theme), f"{view.number}-{fmt}.pdf")
 
 
@@ -559,7 +559,7 @@ async def night_audit_report(db: DbSession, user: StaffUser, day: str, lang: str
     if business_date is None:
         raise HTTPException(status_code=400, detail="Date invalide.")
     hs = await load_hotel_settings(db)
-    theme = await theme_manager.get_theme(db)
+    theme = await theme_manager.load_theme(db)  # lecture seule : aucune écriture dans un GET
     return _pdf(pdf.daily_report_pdf(hs, await reports.daily_summary(db, business_date), lang=pdf.doc_lang(lang),
                                      theme=theme),
                 f"cloture-{day}.pdf")

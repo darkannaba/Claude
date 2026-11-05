@@ -45,6 +45,7 @@
   'document_header': theme.document_header,
   'document_footer': theme.document_footer,
   'doc_logo': theme.show_logo_on_documents,
+  'logo_printable': logo_printable,
   'legal': legal_json,
   'tokens': theme_tokens,
   'samples': samples,
@@ -101,8 +102,8 @@
         <div class="space-y-3 rounded-lg border border-slate-200 p-4 dark:border-slate-800" data-branding-kind="{{ kind }}">
           <div class="text-sm font-semibold">{{ label|tr }}</div>
           <p class="help">
-            {% if kind == 'logo' %}{{ _("Fond clair : barre supérieure, documents et pages en mode clair. Redimensionné à 1024 × 512 px au maximum, proportions conservées.") }}
-            {% elif kind == 'logo-dark' %}{{ _("Fond foncé : barre latérale, page de connexion et mode sombre. Facultatif : à défaut, le logo principal est utilisé.") }}
+            {% if kind == 'logo' %}{{ _("Fond clair : documents PDF (factures, fiches de police, tickets 80 mm) et pages d'erreur en mode clair. Redimensionné à 1024 × 512 px au maximum, proportions conservées.") }}
+            {% elif kind == 'logo-dark' %}{{ _("Fond foncé : barre latérale, page de connexion et pages d'erreur en mode sombre. Facultatif : à défaut, le logo principal est utilisé.") }}
             {% else %}{{ _("Icône de l'onglet du navigateur : recadrée en carré et convertie en PNG 64 × 64 et 32 × 32.") }}{% endif %}
           </p>
           {# Aperçu : fichier choisi (URL blob locale, avant envoi) ou fichier enregistré. #}
@@ -134,7 +135,8 @@
         </div>
         {% endfor %}
       </div>
-      <p class="help">{% if document_logo %}{{ _("Le logo figure sur les factures et fiches de police.") }}{% else %}{{ _("Pour les PDF, téléversez un logo PNG, WEBP ou JPEG.") }}{% endif %}</p>
+      {% if document_logo %}<p class="help">{{ _("Le logo figure sur les factures, fiches de police et tickets 80 mm.") }}</p>
+      {% elif not logo_printable %}<p class="help" data-logo-unprintable>{{ _("Pour les PDF, téléversez un logo PNG, WEBP ou JPEG.") }}</p>{% endif %}
     </section>
 
     {# ------------------------------------------------------------------ couleurs #}
@@ -269,25 +271,27 @@
       <div class="pv-tabbar">
         <span class="pv-tab">
           <img :src="logoOf('favicon') || '/static/img/favicon.svg'" src="{{ branding.favicon or '/static/img/favicon.svg' }}" alt="" class="h-4 w-4 object-contain">
-          <span class="truncate" x-text="displayName">{{ hs.hotel_name }}</span>
+          <span class="truncate" :dir="nameDir" dir="auto" x-text="displayName">{{ hs.hotel_name }}</span>
         </span>
       </div>
 
       {# --- interface --- #}
       <div class="pv-shell" x-show="pvTab === 'ui'">
-        <div class="pv-sidebar">
+        {# Barre latérale toujours foncée, comme layout/base.html : logo sombre, à défaut logo principal. #}
+        <div class="pv-sidebar" data-preview="sidebar">
           <div class="pv-sidebar-brand">
-            <img :src="sidebarLogo" src="{{ branding.logo_dark or '/static/img/favicon.svg' }}" alt="{{ _("Logo de l'établissement") }}" class="h-7 w-auto max-w-[5.5rem] object-contain">
+            <img :src="sidebarLogo" src="{{ branding.logo_dark or '/static/img/favicon.svg' }}" data-preview-logo="sidebar" alt="{{ _("Logo de l'établissement") }}" class="h-7 w-auto max-w-[5.5rem] object-contain">
           </div>
-          <div class="pv-sidebar-name" x-text="displayName">{{ hs.hotel_name }}</div>
-          <div class="pv-sidebar-tagline" x-show="displayTagline" x-text="displayTagline"></div>
+          {# Sens porté par un <bdi> intérieur : le bloc garde le sens de l'aperçu (alignement), comme layout/base.html. #}
+          <div class="pv-sidebar-name"><bdi :dir="nameDir" dir="auto" x-text="displayName">{{ hs.hotel_name }}</bdi></div>
+          <div class="pv-sidebar-tagline" x-show="displayTagline"><bdi :dir="taglineDir" dir="auto" x-text="displayTagline"></bdi></div>
           <div class="pv-nav pv-nav-active"><span x-text="sample('dashboard')">{{ sample.dashboard }}</span></div>
           <div class="pv-nav"><span x-text="sample('planning')">{{ sample.planning }}</span></div>
           <div class="pv-nav"><span x-text="sample('bookings')">{{ sample.bookings }}</span></div>
         </div>
         <div class="pv-main">
+          {# Barre supérieure : aucun logo (fidèle au rendu réel). #}
           <div class="pv-topbar">
-            <img x-show="headerLogo" :src="headerLogo" alt="" class="h-5 w-auto max-w-[6rem] object-contain">
             <span class="pv-muted" x-text="sample('search')">{{ sample.search }}</span>
           </div>
           <div class="pv-card">
@@ -313,12 +317,14 @@
       </div>
 
       {# --- document (en-tête de facture / fiche de police) --- #}
-      <div class="pv-doc" x-show="pvTab === 'doc'" x-cloak>
+      {# Documents (PDF) : logo principal sur fond blanc, uniquement s'il est imprimable (un SVG sans rendu PNG
+         n'apparaît sur aucun PDF : l'aperçu le masque et affiche la note ci-dessous). #}
+      <div class="pv-doc" x-show="pvTab === 'doc'" x-cloak data-preview="document">
         <div class="pv-doc-head">
-          <img x-show="docs.logo && docLogo" :src="docLogo" alt="{{ _("Logo de l'établissement") }}" class="h-10 w-auto max-w-[7rem] object-contain">
+          <img x-show="docs.logo && docLogo" :src="docLogo" {% if branding.logo and logo_printable %}src="{{ branding.logo }}" {% endif %}data-preview-logo="document" alt="{{ _("Logo de l'établissement") }}" class="h-10 w-auto max-w-[7rem] object-contain">
           <div class="min-w-0 flex-1">
-            <div class="pv-doc-name" x-text="displayName">{{ hs.hotel_name }}</div>
-            <div class="pv-doc-tagline" x-show="displayTagline" x-text="displayTagline"></div>
+            <div class="pv-doc-name"><bdi :dir="nameDir" dir="auto" x-text="displayName">{{ hs.hotel_name }}</bdi></div>
+            <div class="pv-doc-tagline" x-show="displayTagline"><bdi :dir="taglineDir" dir="auto" x-text="displayTagline"></bdi></div>
             <div class="pv-doc-legal" dir="ltr"><template x-for="item in legalLines" :key="item"><span x-text="item"></span></template></div>
           </div>
         </div>
@@ -326,9 +332,10 @@
         <div class="pv-doc-title" x-text="sample('invoice')">{{ sample.invoice }}</div>
         <div class="pv-doc-lines"><span></span><span></span><span></span></div>
         <div class="pv-doc-footer" x-show="docs.footer" x-text="docs.footer"></div>
-        <p class="pv-doc-note" x-show="docs.logo && pendingSvgLogo" x-cloak>{{ _("Pour les PDF, téléversez un logo PNG, WEBP ou JPEG.") }}</p>
+        <p class="pv-doc-note" x-show="docs.logo && docLogoUnprintable" x-cloak>{{ _("Pour les PDF, téléversez un logo PNG, WEBP ou JPEG.") }}</p>
       </div>
     </div>
+    <p class="help">{{ _("La barre latérale, toujours foncée, affiche le logo sombre (à défaut, le logo principal) ; les documents affichent le logo principal sur fond blanc s'il est au format PNG, WEBP ou JPEG.") }}</p>
     <p class="help">{{ _("L'aperçu applique les valeurs saisies sans les enregistrer ; chaque section possède son propre bouton d'enregistrement.") }}</p>
   </aside>
 </div>

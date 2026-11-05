@@ -8,7 +8,7 @@
   "Supprimer": "حذف",
   "Enregistrer": "حفظ",
   "Confirmer cette action ?": "هل تؤكد هذا الإجراء؟",
-  "Le logo figure sur les factures et fiches de police.": "يظهر الشعار على الفواتير وبطاقات الشرطة.",
+  "Le logo figure sur les factures, fiches de police et tickets 80 mm.": "يظهر الشعار على الفواتير وبطاقات الشرطة والتذاكر 80 مم.",
   "Pour les PDF, téléversez un logo PNG, WEBP ou JPEG.": "لملفات PDF، ارفع شعارًا بصيغة PNG أو WEBP أو JPEG.",
   "Palette de couleurs": "لوحة الألوان",
   "Rétablit la palette d'origine sans modifier les logos ni les documents.": "يستعيد لوحة الألوان الأصلية دون تعديل الشعارات أو الوثائق.",
@@ -112,5 +112,8 @@
   "Nom du client": "اسم الزبون",
   "Facture n° F-2026-0001": "فاتورة رقم F-2026-0001",
   "Couleur primaire très claire : le texte des boutons passe en foncé et les liens sont assombris automatiquement pour rester lisibles.": "اللون الأساسي فاتح جدًا: يصبح نص الأزرار داكنًا وتُعتَّم الروابط تلقائيًا لتبقى مقروءة.",
-  "Trop de lignes : 10 au maximum pour l'en-tête et 8 pour le pied des documents.": "عدد الأسطر كبير جدًا: 10 أسطر كحد أقصى لرأس المستندات و8 أسطر لتذييلها."
+  "Trop de lignes : 10 au maximum pour l'en-tête et 8 pour le pied des documents.": "عدد الأسطر كبير جدًا: 10 أسطر كحد أقصى لرأس المستندات و8 أسطر لتذييلها.",
+  "Fond clair : documents PDF (factures, fiches de police, tickets 80 mm) et pages d'erreur en mode clair. Redimensionné à 1024 × 512 px au maximum, proportions conservées.": "خلفية فاتحة: وثائق PDF (الفواتير وبطاقات الشرطة والتذاكر 80 مم) وصفحات الخطأ في الوضع الفاتح. يُعاد تحجيمه إلى 1024 × 512 بكسل كحد أقصى مع الحفاظ على تناسب الأبعاد.",
+  "Fond foncé : barre latérale, page de connexion et pages d'erreur en mode sombre. Facultatif : à défaut, le logo principal est utilisé.": "خلفية داكنة: الشريط الجانبي وصفحة تسجيل الدخول وصفحات الخطأ في الوضع الداكن. اختياري: يُستعمل الشعار الرئيسي في غيابه.",
+  "La barre latérale, toujours foncée, affiche le logo sombre (à défaut, le logo principal) ; les documents affichent le logo principal sur fond blanc s'il est au format PNG, WEBP ou JPEG.": "يعرض الشريط الجانبي، الداكن دائمًا، الشعار الداكن (أو الشعار الرئيسي في غيابه)؛ وتعرض الوثائق الشعار الرئيسي على خلفية بيضاء إذا كان بصيغة PNG أو WEBP أو JPEG."
 }

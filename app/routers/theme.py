@@ -37,10 +37,9 @@ def _etag_matches(request: Request, etag: str) -> bool:
 # ---------------------------------------------------------------- routes publiques
 @public.api_route("/static/css/theme-custom.css", methods=["GET", "HEAD"], include_in_schema=False)
 async def theme_css(request: Request, db: DbSession):
-    theme = await tm.get_theme(db)
-    await db.commit()  # conserve la ligne par défaut si elle vient d'être créée
-    css = tm.build_css(theme)
-    etag = tm.css_etag(theme, css)
+    # Instantané en cache, lecture seule : ni requête répétée ni écriture en base pendant un GET.
+    theme = await tm.load_theme(db)
+    css, etag = tm.theme_css(theme)
     headers = {"ETag": etag, "Cache-Control": "no-cache"}
     if _etag_matches(request, etag):
         return Response(status_code=304, headers=headers)
@@ -51,8 +50,7 @@ async def theme_css(request: Request, db: DbSession):
 async def branding(kind: str, request: Request, db: DbSession, size: int | None = None):
     if kind not in BRANDING_KINDS:
         raise HTTPException(status_code=404, detail="Fichier introuvable.")
-    theme = await tm.get_theme(db)
-    await db.commit()
+    theme = await tm.load_theme(db)
     path = tm.branding_file(theme, kind, size)
     if path is None:
         raise HTTPException(status_code=404, detail="Fichier introuvable.")
@@ -69,8 +67,7 @@ async def branding(kind: str, request: Request, db: DbSession, size: int | None 
 # ---------------------------------------------------------------- administration
 @router.get("")
 async def theme_page(request: Request, db: DbSession, user: AdminUser):
-    theme = await tm.get_theme(db)
-    await db.commit()
+    theme = await tm.load_theme(db)
     hs = await load_hotel_settings(db)
     return await render(
         request, db, "admin/theme.html",
@@ -78,6 +75,7 @@ async def theme_page(request: Request, db: DbSession, user: AdminUser):
         defaults=tm.DEFAULT_THEME, fonts={key: font["label"] for key, font in tm.FONTS.items()},
         densities=THEME_DENSITIES, branding_kinds=BRANDING_KINDS, preview=tm.preview(theme),
         document_logo=tm.logo_path_for_documents(theme) is not None,
+        logo_printable=tm.printable_logo_path(theme) is not None,
         identity_fields=[{"name": name, "label": HotelSettings.model_fields[name].title, "value": getattr(hs, name)}
                          for name in tm.IDENTITY_FIELDS],
         max_upload_mb=tm.MAX_UPLOAD_BYTES // (1024 * 1024),
@@ -98,7 +96,7 @@ async def theme_colors(request: Request, db: DbSession, user: AdminUser):
         await log_action(db, user, "theme_colors_saved", "theme", tm.THEME_ID, details)
 
     if await attempt(request, db, action, "Couleurs de la charte enregistrées."):
-        for warning in tm.color_warnings(await tm.get_theme(db)):
+        for warning in tm.color_warnings(await tm.load_theme(db)):
             flash(request, warning, "warning")
     return redirect("/admin/theme")
 

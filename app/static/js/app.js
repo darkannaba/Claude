@@ -439,6 +439,9 @@
         get displayTagline() {
           return (this.pvRtl && this.identity.slogan_ar) ? this.identity.slogan_ar : this.identity.slogan;
         },
+        // Sens d'écriture : « rtl » pour la variante arabe, « auto » pour le texte de repli (comme le layout).
+        get nameDir() { return (this.pvRtl && this.identity.hotel_name_ar) ? "rtl" : "auto"; },
+        get taglineDir() { return (this.pvRtl && this.identity.slogan_ar) ? "rtl" : "auto"; },
         get legalLines() {
           var self = this;
           return this.legalFields.map(function (f) {
@@ -453,9 +456,14 @@
           return this.pending.logo || this.current.logo || "";
         },
         get sidebarLogo() { return this.logoOf("logo-dark") || "/static/img/favicon.svg"; },
-        get headerLogo() { return this.pvDark ? this.logoOf("logo-dark") : this.logoOf("logo"); },
-        get docLogo() { return this.logoOf("logo"); },
+        // Logo des documents : comme les PDF, uniquement un logo imprimable (un SVG sans rendu PNG n'y figure pas).
+        get docLogo() { return this.docLogoUnprintable ? "" : this.logoOf("logo"); },
         get pendingSvgLogo() { return this.pendingTypes.logo === "image/svg+xml"; },
+        // Fichier choisi en SVG, ou logo enregistré non imprimable (data.logo_printable fourni par le serveur).
+        get docLogoUnprintable() {
+          if (this.pending.logo) return this.pendingSvgLogo;
+          return !!this.current.logo && !data.logo_printable;
+        },
         pick: function (kind, event) {
           var input = event.target;
           var file = input.files && input.files[0];

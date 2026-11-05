@@ -130,7 +130,7 @@ async def order_void(request: Request, db: DbSession, user: StaffUser, order_id:
 async def order_ticket(db: DbSession, user: StaffUser, order_id: int, lang: str = "bi"):
     order = await _order(db, order_id)
     hs = await load_hotel_settings(db)
-    theme = await theme_manager.get_theme(db)
+    theme = await theme_manager.load_theme(db)  # lecture seule : aucune écriture dans un GET
     return Response(pdf.pos_ticket_pdf(hs, order, lang=pdf.doc_lang(lang), theme=theme), media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{order.number}.pdf"'})
 

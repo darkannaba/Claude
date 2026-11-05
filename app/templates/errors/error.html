@@ -9,9 +9,12 @@
 </head>
 <body class="flex h-full items-center justify-center p-6">
   <div class="card w-full max-w-md text-center">
+    {# Carte claire / foncée selon le mode : logo principal en clair, variante sombre (repli : logo principal) en
+       mode sombre ; chacune est affichée indépendamment, un logo sombre seul apparaît donc en mode sombre. #}
     {% if branding and branding.logo %}
-      {# Carte claire / foncée selon le mode : logo principal en clair, variante sombre en mode sombre. #}
       <img src="{{ branding.logo }}" alt="{{ _("Logo de l'établissement") }}" class="brand-logo mx-auto mb-4 h-12 w-auto max-w-[12rem] object-contain dark:hidden">
+    {% endif %}
+    {% if branding and branding.logo_dark %}
       <img src="{{ branding.logo_dark }}" alt="{{ _("Logo de l'établissement") }}" class="brand-logo mx-auto mb-4 hidden h-12 w-auto max-w-[12rem] object-contain dark:block">
     {% endif %}
     <div class="text-5xl font-bold text-link">{{ status_code }}</div>

@@ -3,6 +3,12 @@
 {# Nom et slogan affichés selon la langue (arabe : nom et slogan arabes s'ils sont renseignés). #}
 {% set brand_name = (hs.hotel_name_ar if lang == 'ar' and hs.hotel_name_ar else hs.hotel_name) %}
 {% set brand_tagline = ((theme.slogan_ar if lang == 'ar' and theme.slogan_ar else theme.slogan) if theme else '') %}
+{# Sens d'écriture : « rtl » pour la variante arabe, « auto » pour le texte de repli (français) afin que la
+   ponctuation et les parenthèses restent du bon côté dans un contexte html[dir=rtl]. Il est porté par un <bdi>
+   intérieur et non par le bloc : celui-ci garde le sens de la page, donc l'alignement « text-start » (côté du
+   logo), même quand le texte isolé est en ltr. #}
+{% set brand_name_dir = 'rtl' if lang == 'ar' and hs.hotel_name_ar else 'auto' %}
+{% set brand_tagline_dir = 'rtl' if lang == 'ar' and theme and theme.slogan_ar else 'auto' %}
 <!doctype html>
 <html lang="{{ lang }}" dir="{{ dir }}" class="h-full{{ ' ar' if lang == 'ar' else '' }}">
 <head>
@@ -33,13 +39,13 @@
           <img src="/static/img/favicon.svg" alt="{{ _("Logo de l'établissement") }}" class="h-8 w-8 shrink-0 object-contain">
         {% endif %}
         <div class="min-w-0 flex-1 text-start">
-          <div class="truncate text-sm font-semibold text-white">{{ brand_name }}</div>
+          <div class="brand-name truncate text-sm font-semibold text-white"><bdi dir="{{ brand_name_dir }}">{{ brand_name }}</bdi></div>
           {% if brand_tagline %}
-            <div class="truncate text-xs text-slate-400" title="{{ brand_tagline }}">{{ brand_tagline }}</div>
+            <div class="brand-tagline truncate text-xs text-slate-400" title="{{ brand_tagline }}"><bdi dir="{{ brand_tagline_dir }}">{{ brand_tagline }}</bdi></div>
           {% elif lang != 'ar' and hs.hotel_name_ar %}
-            <div class="truncate text-xs text-slate-400 ar" dir="rtl">{{ hs.hotel_name_ar }}</div>
+            <div class="truncate text-xs text-slate-400 ar" lang="ar"><bdi dir="rtl">{{ hs.hotel_name_ar }}</bdi></div>
           {% elif lang == 'ar' and hs.hotel_name_ar %}
-            <div class="truncate text-xs text-slate-400" dir="ltr">{{ hs.hotel_name }}</div>
+            <div class="truncate text-xs text-slate-400"><bdi dir="auto">{{ hs.hotel_name }}</bdi></div>
           {% endif %}
         </div>
       </a>

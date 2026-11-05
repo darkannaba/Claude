@@ -8,7 +8,7 @@
   "Supprimer": "Delete",
   "Enregistrer": "Save",
   "Confirmer cette action ?": "Confirm this action?",
-  "Le logo figure sur les factures et fiches de police.": "The logo appears on invoices and police registration forms.",
+  "Le logo figure sur les factures, fiches de police et tickets 80 mm.": "The logo appears on invoices, police registration forms and 80 mm tickets.",
   "Pour les PDF, téléversez un logo PNG, WEBP ou JPEG.": "For PDFs, upload a PNG, WEBP or JPEG logo.",
   "Palette de couleurs": "Colour palette",
   "Rétablit la palette d'origine sans modifier les logos ni les documents.": "Restores the original palette without changing logos or documents.",
@@ -112,5 +112,8 @@
   "Nom du client": "Guest name",
   "Facture n° F-2026-0001": "Invoice no. F-2026-0001",
   "Couleur primaire très claire : le texte des boutons passe en foncé et les liens sont assombris automatiquement pour rester lisibles.": "Very light primary colour: button text switches to dark and links are automatically darkened to stay readable.",
-  "Trop de lignes : 10 au maximum pour l'en-tête et 8 pour le pied des documents.": "Too many lines: 10 at most for the document header and 8 for the footer."
+  "Trop de lignes : 10 au maximum pour l'en-tête et 8 pour le pied des documents.": "Too many lines: 10 at most for the document header and 8 for the footer.",
+  "Fond clair : documents PDF (factures, fiches de police, tickets 80 mm) et pages d'erreur en mode clair. Redimensionné à 1024 × 512 px au maximum, proportions conservées.": "Light background: PDF documents (invoices, police registration forms, 80 mm tickets) and error pages in light mode. Resized to 1024 × 512 px at most, keeping its proportions.",
+  "Fond foncé : barre latérale, page de connexion et pages d'erreur en mode sombre. Facultatif : à défaut, le logo principal est utilisé.": "Dark background: sidebar, sign-in page and error pages in dark mode. Optional: the main logo is used otherwise.",
+  "La barre latérale, toujours foncée, affiche le logo sombre (à défaut, le logo principal) ; les documents affichent le logo principal sur fond blanc s'il est au format PNG, WEBP ou JPEG.": "The sidebar, always dark, shows the dark logo (or the main logo if there is none); documents show the main logo on a white background if it is a PNG, WEBP or JPEG file."
 }

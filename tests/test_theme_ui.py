@@ -290,3 +290,274 @@ def test_compiled_css_contains_preview_and_logical_classes():
     for selector in (".theme-preview", ".pv-dark", ".pv-room-available", ".pv-badge-maintenance", ".text-start"):
         assert selector in css, selector
     assert "rgb(var(--brand-600)" in css
+
+
+# ---------------------------------------------------------------- sens d'écriture du nom et du slogan (arabe)
+def _element(html: str, css_class: str) -> str:
+    """Balise ouvrante du premier élément portant la classe donnée."""
+    match = re.search(r'<(?:div|h1|p)[^>]*class="[^"]*\b' + re.escape(css_class) + r'\b[^"]*"[^>]*>', html)
+    assert match, css_class
+    return match.group(0)
+
+
+def _text_dir(html: str, css_class: str) -> str:
+    """Attribut dir du <bdi> qui isole le texte du bloc ``css_class`` ; le bloc lui-même ne porte aucun dir
+    (il garde le sens de la page et donc l'alignement « text-start »)."""
+    block = _element(html, css_class)
+    assert " dir=" not in block, block
+    after = html.split(block, 1)[1]
+    match = re.match(r'\s*<bdi\b[^>]*?(?<!:)dir="([^"]+)"', after)
+    assert match, after[:120]
+    return match.group(1)
+
+
+def _set_identity(admin, **fields):
+    payload = {"hotel_name": "Hôtel Annaba", "hotel_name_ar": "فندق عنابة", "show_logo_on_documents": "1", **fields}
+    assert admin.form("/admin/theme/documents", payload).status_code == 303
+
+
+def test_french_fallback_name_and_slogan_use_dir_auto_in_arabic(admin, anonymous, in_language):
+    """Slogan et nom arabes vides : le texte français de repli est isolé par dir="auto"."""
+    try:
+        _set_identity(admin, hotel_name="Hôtel Annaba (centre)", hotel_name_ar="", slogan="Votre escale à Annaba !",
+                      slogan_ar="")
+        sidebar = in_language("ar").get("/").text
+        assert _text_dir(sidebar, "brand-name") == "auto" and _text_dir(sidebar, "brand-tagline") == "auto"
+        assert "Hôtel Annaba (centre)" in sidebar and "Votre escale à Annaba !" in sidebar
+
+        anonymous.form("/lang", {"lang": "ar", "next": "/login"})
+        login = anonymous.get("/login").text
+        assert 'dir="rtl"' in login.split("<html", 1)[1].split(">", 1)[0]
+        h1 = re.search(r"<h1[^>]*>([^<]*)</h1>", login)
+        assert h1 and 'dir="auto"' in h1.group(0) and h1.group(1) == "Hôtel Annaba (centre)"
+        assert 'dir="auto"' in _element(login, "brand-tagline")
+    finally:
+        _set_identity(admin)
+
+
+def test_arabic_name_and_slogan_are_rtl_when_defined(admin, in_language):
+    try:
+        _set_identity(admin, slogan="Votre escale à Annaba !", slogan_ar="محطتك في عنابة")
+        sidebar = in_language("ar").get("/").text
+        assert _text_dir(sidebar, "brand-name") == "rtl" and _text_dir(sidebar, "brand-tagline") == "rtl"
+        # Interface française : nom français en dir="auto".
+        french = in_language("fr").get("/").text
+        assert _text_dir(french, "brand-name") == "auto"
+    finally:
+        _set_identity(admin)
+
+
+def test_arabic_login_title_is_arabic_name(admin, anonymous):
+    _set_identity(admin)
+    anonymous.form("/lang", {"lang": "ar", "next": "/login"})
+    login = anonymous.get("/login").text
+    h1 = re.search(r"<h1[^>]*>([^<]*)</h1>", login)
+    assert h1 and h1.group(1) == "فندق عنابة" and 'dir="rtl"' in h1.group(0)
+    # Nom français en ligne secondaire, isolé par dir="auto".
+    assert re.search(r'<p class="text-slate-300" dir="auto">Hôtel Annaba</p>', login)
+    # Interface française : titre français, nom arabe en ligne secondaire.
+    anonymous.form("/lang", {"lang": "fr", "next": "/login"})
+    french = anonymous.get("/login").text
+    assert re.search(r'<h1[^>]*dir="auto"[^>]*>Hôtel Annaba</h1>', french)
+    assert re.search(r'<p class="ar text-slate-300" dir="rtl" lang="ar">فندق عنابة</p>', french)
+
+
+def test_preview_texts_use_bound_direction(admin):
+    html = admin.get("/admin/theme").text
+    for css_class in ("pv-sidebar-name", "pv-sidebar-tagline", "pv-doc-name", "pv-doc-tagline"):
+        assert _text_dir(html, css_class) == "auto", css_class
+        inner = html.split(_element(html, css_class), 1)[1].split(">", 1)[0]
+        assert ':dir="' in inner, css_class
+    source = APP_JS.read_text(encoding="utf-8")
+    assert "get nameDir()" in source and "get taglineDir()" in source
+
+
+# ---------------------------------------------------------------- aperçu fidèle au rendu réel des logos
+def _preview(html: str) -> str:
+    return html.split("data-theme-preview", 1)[1]
+
+
+def test_preview_sidebar_uses_dark_logo_or_fallback_and_document_main_logo(admin):
+    preview = _preview(admin.get("/admin/theme").text)
+    assert re.search(r'<img :src="sidebarLogo" src="/static/img/favicon.svg" data-preview-logo="sidebar"', preview)
+
+    upload(admin, "logo", png())
+    version = _version_now()
+    preview = _preview(admin.get("/admin/theme").text)
+    # Sans logo sombre : repli sur le logo principal dans la barre latérale (comme layout/base.html).
+    assert f'<img :src="sidebarLogo" src="/branding/logo?v={version}" data-preview-logo="sidebar"' in preview
+    assert 'class="pv-sidebar" data-preview="sidebar"' in preview
+    # Document : logo principal sur fond blanc.
+    doc = preview.split('data-preview="document"', 1)[1]
+    assert f'src="/branding/logo?v={version}" data-preview-logo="document"' in doc
+
+    upload(admin, "logo-dark", png(color=(255, 255, 255, 255)))
+    version = _version_now()
+    preview = _preview(admin.get("/admin/theme").text)
+    assert f'src="/branding/logo-dark?v={version}" data-preview-logo="sidebar"' in preview
+    assert f'src="/branding/logo?v={version}" data-preview-logo="document"' in preview
+    # Barre supérieure : aucun logo (le layout réel n'en affiche pas).
+    topbar = preview.split('class="pv-topbar"', 1)[1].split("</div>", 1)[0]
+    assert "<img" not in topbar
+    assert "headerLogo" not in APP_JS.read_text(encoding="utf-8")
+
+
+def _version_now() -> int:
+    return asyncio.run(_version())
+
+
+@pytest.mark.parametrize("lang, logo_help, dark_help, preview_help", [
+    ("fr", "Fond clair : documents PDF (factures, fiches de police, tickets 80 mm) et pages d&#39;erreur en mode clair.",
+     "Fond foncé : barre latérale, page de connexion et pages d&#39;erreur en mode sombre.",
+     "La barre latérale, toujours foncée, affiche le logo sombre"),
+    ("en", "Light background: PDF documents (invoices, police registration forms, 80 mm tickets) and error pages in light mode.",
+     "Dark background: sidebar, sign-in page and error pages in dark mode.",
+     "The sidebar, always dark, shows the dark logo"),
+    ("ar", "خلفية فاتحة: وثائق PDF (الفواتير وبطاقات الشرطة والتذاكر 80 مم) وصفحات الخطأ في الوضع الفاتح.",
+     "خلفية داكنة: الشريط الجانبي وصفحة تسجيل الدخول وصفحات الخطأ في الوضع الداكن.",
+     "يعرض الشريط الجانبي، الداكن دائمًا، الشعار الداكن"),
+], ids=["fr", "en", "ar"])
+def test_logo_help_texts_match_real_rendering(in_language, lang, logo_help, dark_help, preview_help):
+    html = in_language(lang).get("/admin/theme").text
+    unescaped = html.replace("&#39;", "'")
+    for text in (logo_help, dark_help, preview_help):
+        assert text.replace("&#39;", "'") in unescaped, text
+    assert "barre supérieure" not in html and "top bar" not in html and "الشريط العلوي" not in html
+
+
+# ---------------------------------------------------------------- aperçu « Document » : logo imprimable uniquement
+SVG_LOGO = (b'<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40" viewBox="0 0 120 40">'
+            b'<rect width="120" height="40" fill="#7c3aed"/></svg>')
+
+# Harnais Node : exécute app.js avec un DOM minimal, puis instancie le composant Alpine « themeEditor » à partir du
+# bloc JSON réel de la page et renvoie docLogo / docLogoUnprintable pour chaque scénario (sélection locale ou non).
+EDITOR_HARNESS = r"""
+var fs = require("fs");
+var editorJson = process.argv[2], scenarios = JSON.parse(process.argv[3]);
+var listeners = {}, registry = {};
+function on(type, fn) { (listeners[type] = listeners[type] || []).push(fn); }
+global.CustomEvent = function () {};
+global.window = global;
+global.document = {
+  documentElement: { classList: { contains: function () { return false; }, toggle: function () {} } },
+  querySelector: function () { return null; }, querySelectorAll: function () { return []; },
+  getElementById: function (id) { return id === "theme-editor-data" ? { textContent: editorJson } : null; },
+  addEventListener: on, dispatchEvent: function () {}
+};
+window.addEventListener = function () {};
+window.getComputedStyle = function () { return { getPropertyValue: function () { return ""; } }; };
+window.Alpine = { data: function (name, factory) { registry[name] = factory; }, store: function () {} };
+eval(fs.readFileSync(process.argv[1], "utf8"));
+(listeners["alpine:init"] || []).forEach(function (fn) { fn(); });
+var out = scenarios.map(function (s) {
+  var editor = registry.themeEditor();
+  if (s.pending) { editor.pending.logo = s.pending; editor.pendingTypes.logo = s.type; }
+  return { logo: editor.docLogo, unprintable: editor.docLogoUnprintable };
+});
+process.stdout.write(JSON.stringify(out));
+"""
+
+
+def _doc_preview_states(html: str, scenarios: list[dict]) -> list[dict]:
+    match = EDITOR_DATA_RE.search(html)
+    assert match
+    result = subprocess.run(["node", "-e", EDITOR_HARNESS, str(APP_JS), match.group(1), json.dumps(scenarios)],
+                            capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+def _document_preview(html: str) -> str:
+    return _preview(html).split('data-preview="document"', 1)[1].split("</aside>", 1)[0]
+
+
+def test_saved_svg_logo_not_shown_in_document_preview(admin):
+    """Logo principal SVG enregistré (sans rendu PNG) : aucun PDF ne l'imprime, l'aperçu Document non plus."""
+    upload(admin, "logo", SVG_LOGO, filename="logo.svg", content_type="image/svg+xml")
+    version = _version_now()
+    html = admin.get("/admin/theme").text
+    data = editor_data(html)
+    assert data["current"]["logo"] == f"/branding/logo?v={version}" and data["doc_logo"] is True
+    assert data["logo_printable"] is False
+    doc = _document_preview(html)
+    image = re.search(r'<img[^>]*data-preview-logo="document"[^>]*>', doc).group(0)
+    assert " src=" not in image.replace(':src="docLogo"', "")  # pas de logo rendu côté serveur
+    assert 'x-show="docs.logo &amp;&amp; docLogoUnprintable"' in doc or 'x-show="docs.logo && docLogoUnprintable"' in doc
+    assert "data-logo-unprintable" in html
+    # La barre latérale continue d'afficher le SVG (le navigateur sait l'afficher).
+    assert f'src="/branding/logo?v={version}" data-preview-logo="sidebar"' in _preview(html)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js absent")
+def test_document_preview_logo_follows_printability(admin):
+    upload(admin, "logo", SVG_LOGO, filename="logo.svg", content_type="image/svg+xml")
+    svg_page = admin.get("/admin/theme").text
+    saved_svg, pending_png, pending_svg = _doc_preview_states(svg_page, [
+        {}, {"pending": "blob:png", "type": "image/png"}, {"pending": "blob:svg", "type": "image/svg+xml"}])
+    assert saved_svg == {"logo": "", "unprintable": True}
+    assert pending_png == {"logo": "blob:png", "unprintable": False}
+    assert pending_svg == {"logo": "", "unprintable": True}
+
+    upload(admin, "logo", png())
+    png_page = admin.get("/admin/theme").text
+    assert editor_data(png_page)["logo_printable"] is True
+    assert "data-logo-unprintable" not in png_page
+    version = _version_now()
+    (saved_png, pending_svg) = _doc_preview_states(png_page, [{}, {"pending": "blob:svg", "type": "image/svg+xml"}])
+    assert saved_png == {"logo": f"/branding/logo?v={version}", "unprintable": False}
+    assert pending_svg == {"logo": "", "unprintable": True}
+    assert f'src="/branding/logo?v={version}" data-preview-logo="document"' in _document_preview(png_page)
+
+
+def test_error_page_shows_dark_logo_alone_in_dark_mode(admin, reception):
+    """Logo sombre seul : la page d'erreur l'affiche en mode sombre (comme l'indique l'aide)."""
+    upload(admin, "logo-dark", png(color=(255, 255, 255, 255)))
+    version = _version_now()
+    admin.get("/")  # dernier rendu connu : charte courante
+    html = reception.get("/admin/theme").text
+    images = re.findall(r'<img[^>]*class="brand-logo[^"]*"[^>]*>', html)
+    assert len(images) == 1
+    assert f'src="/branding/logo-dark?v={version}"' in images[0] and "dark:block" in images[0]
+
+
+# ---------------------------------------------------------------- alignement réel de la barre latérale (Chrome)
+CHROME = shutil.which("google-chrome") or shutil.which("chromium") or shutil.which("chromium-browser")
+MEASURE_SCRIPT = """<script>
+var out = {}, logo = document.querySelector("aside a img").getBoundingClientRect();
+["brand-name", "brand-tagline"].forEach(function (cls) {
+  var block = document.querySelector("aside ." + cls), text = block.querySelector("bdi");
+  var b = block.getBoundingClientRect(), t = text.getBoundingClientRect();
+  out[cls] = { blockDir: getComputedStyle(block).direction, textDir: getComputedStyle(text).direction,
+               blockLeft: b.left, blockRight: b.right, textLeft: t.left, textRight: t.right };
+});
+out.logoLeft = logo.left;
+document.body.setAttribute("data-measure", JSON.stringify(out));
+</script>"""
+
+
+@pytest.mark.skipif(CHROME is None, reason="Chrome absent")
+def test_rtl_sidebar_fallback_text_aligned_next_to_logo(admin, in_language, tmp_path):
+    """Arabe sans nom ni slogan arabes : le texte français isolé (ltr) reste aligné côté logo (à droite)."""
+    try:
+        _set_identity(admin, hotel_name="Hôtel (centre)", hotel_name_ar="", slogan="Escale !", slogan_ar="")
+        html = in_language("ar").get("/").text
+    finally:
+        _set_identity(admin)
+    static = APP_JS.parent.parent
+    html = re.sub(r"<script\b[^>]*>.*?</script>", "", html, flags=re.DOTALL)
+    html = html.replace('href="/static/', f'href="file://{static}/').replace('src="/static/', f'src="file://{static}/')
+    page = tmp_path / "sidebar.html"
+    page.write_text(html.replace("</body>", MEASURE_SCRIPT + "</body>"), encoding="utf-8")
+    result = subprocess.run([CHROME, "--headless", "--no-sandbox", "--disable-gpu", "--allow-file-access-from-files",
+                             "--window-size=1280,800", "--dump-dom", page.as_uri()],
+                            capture_output=True, text=True, timeout=60)
+    match = re.search(r'data-measure="([^"]+)"', result.stdout)
+    assert match, result.stderr[-500:]
+    measure = json.loads(match.group(1).replace("&quot;", '"'))
+    for cls in ("brand-name", "brand-tagline"):
+        m = measure[cls]
+        assert m["blockDir"] == "rtl" and m["textDir"] == "ltr", (cls, m)
+        # Texte collé au bord droit du bloc (côté logo), et non au bord gauche.
+        assert abs(m["blockRight"] - m["textRight"]) < 1.5, (cls, m)
+        assert m["textLeft"] - m["blockLeft"] > 10, (cls, m)
+    assert measure["logoLeft"] >= measure["brand-name"]["blockRight"] - 1  # logo à droite du texte

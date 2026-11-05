@@ -32,6 +32,17 @@ def _ascii(text: str) -> str:
     return "".join(ch for ch in normalized if ord(ch) < 128 and not unicodedata.combining(ch))
 
 
+def _printable(text: str) -> str:
+    """Texte d'une ligne de ticket : ASCII imprimable uniquement (0x20-0x7e).
+
+    Aucun caractère de contrôle issu du texte (ESC, GS, NUL, BEL, DLE…) n'atteint l'imprimante, quel que soit
+    son origine (charte, nom de client, libellé d'article) : seules les méthodes d'``EscPos`` émettent des
+    commandes. Tabulations et sauts de ligne deviennent des espaces.
+    """
+    plain = _ascii(str(text or ""))
+    return "".join(ch if 32 <= ord(ch) < 127 else " " if ch in "\t\n\r\x0b\x0c" else "" for ch in plain)
+
+
 class EscPos:
     """Constructeur minimal de flux ESC/POS (compatible Epson TM, Xprinter, Bixolon…)."""
 
@@ -52,11 +63,13 @@ class EscPos:
         return self
 
     def text(self, line: str = "") -> "EscPos":
-        self.buffer += _ascii(line).encode("ascii", "replace") + b"\n"
+        """Une ligne par ligne du texte (le saut de ligne émis est celui d'EscPos, jamais celui du texte)."""
+        for part in str(line or "").splitlines() or [""]:
+            self.buffer += _printable(part).encode("ascii", "replace") + b"\n"
         return self
 
     def pair(self, left: str, right: str) -> "EscPos":
-        left, right = _ascii(left), _ascii(right)
+        left, right = _printable(left), _printable(right)
         space = self.width - len(right) - 1
         if len(left) > space:
             self.text(left)
@@ -125,7 +138,7 @@ def _wrapped(text: str, width: int) -> list[str]:
     vides de lettres (texte uniquement en arabe) sont écartées."""
     lines: list[str] = []
     for paragraph in text.splitlines():
-        plain = " ".join(_ascii(paragraph).split())
+        plain = " ".join(_printable(paragraph).split())
         if plain:
             lines.extend(textwrap.wrap(plain, width) or [plain])
     return lines

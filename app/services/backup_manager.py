@@ -698,6 +698,7 @@ async def restore_archive(db: AsyncSession, archive: Path, hs: HotelSettings, us
         await db.commit()  # aucune transaction ouverte pendant l'écrasement de la base
         db.expunge_all()
         await asyncio.to_thread(backup.write_database, db_file)
+        theme_manager.invalidate_theme_cache()  # la charte en cache décrit l'ancienne base
         await asyncio.to_thread(extract_branding, archive)
     finally:
         if db_file != archive:
@@ -708,6 +709,7 @@ async def restore_archive(db: AsyncSession, archive: Path, hs: HotelSettings, us
     except Exception as exc:  # base plus récente que le code, ou schéma inattendu : signalé, pas masqué
         logger.exception("Migrations après restauration en échec")
         migration_error = readable_error(exc)
+    theme_manager.invalidate_theme_cache()  # les migrations peuvent avoir créé ou modifié la ligne de charte
     await _merge_history(db, history)
     branding_note = ""
     if not migration_error:

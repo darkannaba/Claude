@@ -185,7 +185,9 @@ async def render(request: Request, db: AsyncSession, name: str, status_code: int
     flashes = [{**f, "msg": t(f.get("msg", ""), lang)} for f in request.session.pop("flashes", [])]
     nav = [{**item, "label": t(item["label"], lang)} for item in navigation(user, modules)]
     # Charte graphique (white-label) : ``theme`` et ``branding`` (URL versionnées ?v=<version>) pour tous les templates.
-    theme_ctx = tm.theme_context(await tm.get_theme(db))
+    # Instantané en cache (aucune requête theme_settings une fois chargé, aucune écriture pendant un GET) ; seule
+    # la présence des fichiers de marque sur le disque est revérifiée.
+    theme_ctx = tm.theme_context(await tm.load_theme(db))
     _last_branding.clear()
     _last_branding.update(theme_ctx["branding"])
     context.update(theme_ctx)

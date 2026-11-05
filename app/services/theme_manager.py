@@ -16,14 +16,26 @@ sont acceptés qu'après une vérification stricte (aucun script, gestionnaire d
 Aucune police n'est téléchargée depuis Internet : les piles CSS se replient sur les polices du système, et
 les fichiers ``.woff2`` éventuellement déposés dans ``app/static/fonts/ui/`` (``inter.woff2`` police
 variable, ou ``inter-400.woff2``, ``inter-700.woff2``…) sont déclarés automatiquement par ``@font-face``.
+
+Lecture et écriture :
+- ``load_theme`` (pages, feuille CSS, fichiers de marque) renvoie un instantané détaché mis en cache dans le
+  processus, sans jamais écrire en base (ligne absente : valeurs par défaut en mémoire). Le cache est invalidé
+  dès qu'une transaction modifie ``theme_settings`` (écouteurs de session ci-dessous), à chaque enregistrement
+  de la charte et après une restauration de sauvegarde (``invalidate_theme_cache``).
+- Les modifications (``update_*``, ``reset_colors``, ``save_image``, ``delete_image``, ``reconcile_branding``)
+  sont sérialisées par un verrou asyncio pris jusqu'à la fin de la transaction (application mono-processus) ;
+  la version est incrémentée en SQL et les fichiers de marque non référencés sont purgés après le commit.
 """
 from __future__ import annotations
 
 import asyncio
+import functools
 import hashlib
 import re
 import secrets
+import unicodedata
 import warnings
+import weakref
 from collections.abc import Mapping
 from datetime import datetime
 from io import BytesIO
@@ -32,9 +44,11 @@ from typing import Any
 from xml.etree import ElementTree
 
 from PIL import Image, ImageOps, UnidentifiedImageError
-from sqlalchemy import event
+from sqlalchemy import event, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.config import config
 from app.database import SessionLocal
@@ -168,6 +182,13 @@ SVG_XML_DECLARATION_RE = re.compile(r"^\s*<\?xml\s[^>]*\?>", re.IGNORECASE)
 SVG_NAMESPACE = "http://www.w3.org/2000/svg"
 ElementTree.register_namespace("xlink", "http://www.w3.org/1999/xlink")
 CONTROL_CHARS_RE = re.compile(r"[\x00-\x20\x7f]+")
+# Éléments d'animation SMIL : ils peuvent réécrire n'importe quel attribut (href d'un lien, gestionnaire…).
+SVG_ANIMATION_ELEMENTS = frozenset({
+    "set", "animate", "animatemotion", "animatetransform", "animatecolor", "discard",
+})
+SVG_FRAGMENT_RE = re.compile(r"^#[A-Za-z_][\w.\-]*$")
+# Éléments dont le href peut désigner une image embarquée (data:image/…) ; ailleurs, seul un fragment est admis.
+SVG_IMAGE_ELEMENTS = frozenset({"image", "feimage"})
 
 TEXT_LIMITS = {"slogan": 200, "slogan_ar": 200, "document_header": 1000, "document_footer": 1000}
 # Nombre de lignes maximal des textes de documents : le pied est répété au bas de chaque page A4 et réduit
@@ -178,16 +199,19 @@ IDENTITY_FIELDS: tuple[str, ...] = ("hotel_name", "hotel_name_ar", "hotel_nif", 
 
 
 # ================================================================= chargement
-async def get_theme(db: AsyncSession) -> ThemeSettings:
-    """Charte courante ; crée la ligne par défaut si elle est absente (insertion sans conflit possible).
+async def get_theme(db: AsyncSession, refresh: bool = False) -> ThemeSettings:
+    """Ligne de charte attachée à ``db`` (écritures) ; crée la ligne par défaut si elle est absente.
 
-    Un appelant en lecture seule qui veut conserver la ligne créée doit valider (``commit``) sa session.
+    Réservé aux chemins d'écriture : les lectures (pages, CSS, fichiers de marque) passent par ``load_theme``,
+    qui n'écrit jamais. Un appelant qui veut conserver la ligne créée doit valider (``commit``) sa session.
+    ``refresh`` relit la ligne en base même si la session en détient déjà une copie.
     """
-    theme = await db.get(ThemeSettings, THEME_ID)
+    theme = await db.get(ThemeSettings, THEME_ID, populate_existing=refresh)
     if theme is None:
         await db.execute(sqlite_insert(ThemeSettings).values(
             id=THEME_ID, updated_at=datetime.now(), version=1, **DEFAULT_THEME,
         ).on_conflict_do_nothing(index_elements=["id"]))
+        _mark_changed(db.sync_session)
         theme = await db.get(ThemeSettings, THEME_ID, populate_existing=True)
     return theme
 
@@ -199,9 +223,163 @@ async def ensure_theme() -> None:
         await db.commit()
 
 
-def _touch(theme: ThemeSettings) -> None:
-    theme.version = (theme.version or 0) + 1
-    theme.updated_at = datetime.now()
+# ================================================================= cache de la charte (niveau processus)
+_THEME_CHANGED = "theme_settings_changed"  # clé de Session.info : la transaction en cours a modifié la charte
+_THEME_CHANGE = "theme_settings_change"    # clé de Session.info : modification en cours (verrou détenu)
+_cache: dict[str, Any] = {"theme": None, "generation": 0, "css": None}
+
+
+def invalidate_theme_cache() -> None:
+    """Oublie l'instantané de la charte (et le relevé des polices locales) : relu à la prochaine requête."""
+    _cache["theme"] = None
+    _cache["css"] = None
+    _cache["generation"] += 1
+    _font_faces_in.cache_clear()
+
+
+def _mark_changed(session: Session) -> None:
+    session.info[_THEME_CHANGED] = True
+    invalidate_theme_cache()
+
+
+def default_theme() -> ThemeSettings:
+    """Charte d'origine en mémoire (non rattachée à une session), utilisée tant que la ligne n'existe pas."""
+    return ThemeSettings(id=THEME_ID, version=1, updated_at=None, **DEFAULT_THEME)
+
+
+def _snapshot(row: Mapping[str, Any]) -> ThemeSettings:
+    """Copie détachée d'une ligne ``theme_settings`` : jamais ajoutée à une session, partagée en lecture seule."""
+    return ThemeSettings(**{column.key: row[column.name] for column in ThemeSettings.__table__.columns})
+
+
+async def load_theme(db: AsyncSession) -> ThemeSettings:
+    """Charte courante pour l'affichage : instantané en cache, aucune écriture en base.
+
+    Ligne absente (ex. restauration d'une sauvegarde antérieure à la migration 0004) : valeurs par défaut en
+    mémoire ; la ligne est créée par ``ensure_theme`` au démarrage ou par le premier enregistrement.
+    """
+    cached = _cache["theme"]
+    if cached is not None:
+        return cached
+    generation = _cache["generation"]
+    table = ThemeSettings.__table__
+    row = (await db.execute(select(table).where(table.c.id == THEME_ID))).mappings().first()
+    theme = _snapshot(row) if row is not None else default_theme()
+    # Pas de mise en cache si la charte a changé pendant la lecture, ni si cette session porte elle-même une
+    # modification non validée (la valeur lue pourrait encore être annulée).
+    if generation == _cache["generation"] and not db.sync_session.info.get(_THEME_CHANGED):
+        _cache["theme"] = theme
+    return theme
+
+
+def theme_css(theme: ThemeSettings) -> tuple[str, str]:
+    """(feuille CSS, ETag) de ``theme`` ; mis en cache pour l'instantané courant."""
+    cached = _cache["css"]
+    if cached is not None and cached[0] is theme:
+        return cached[1], cached[2]
+    css = build_css(theme)
+    etag = css_etag(theme, css)
+    if theme is _cache["theme"]:
+        _cache["css"] = (theme, css, etag)
+    return css, etag
+
+
+@event.listens_for(Session, "after_flush")
+def _theme_flushed(session: Session, _context) -> None:
+    """Toute écriture ORM de la charte (y compris hors de ce module) invalide le cache."""
+    if any(isinstance(obj, ThemeSettings) for obj in (*session.new, *session.dirty, *session.deleted)):
+        _mark_changed(session)
+
+
+@event.listens_for(Session, "before_commit")
+def _theme_before_commit(session: Session) -> None:
+    """Noms des fichiers de marque qui seront référencés après le commit (relevés avant l'expiration éventuelle
+    des attributs)."""
+    change = session.info.get(_THEME_CHANGE)
+    if change is not None:
+        values = change["theme"].__dict__
+        change["referenced"] = {values.get(field) or "" for field in KIND_FIELDS.values()} \
+            if all(field in values for field in KIND_FIELDS.values()) else None
+
+
+@event.listens_for(Session, "after_commit")
+def _theme_committed(session: Session) -> None:
+    change = session.info.get(_THEME_CHANGE)
+    if change is not None:
+        change["committed"] = True
+
+
+@event.listens_for(Session, "after_transaction_end")
+def _theme_transaction_end(session: Session, transaction) -> None:
+    """Fin de la transaction racine : invalidation du cache, nettoyage des fichiers, libération du verrou."""
+    if transaction.parent is not None:
+        return
+    if session.info.pop(_THEME_CHANGED, False):
+        invalidate_theme_cache()
+    change = session.info.get(_THEME_CHANGE)
+    if change is None or change["transaction"] is not transaction:
+        return
+    del session.info[_THEME_CHANGE]
+    try:
+        if change["committed"]:
+            if change.get("referenced") is not None:
+                _purge_unreferenced(change["referenced"])
+        else:
+            for name in change["rollback_files"]:
+                _remove_files(name)
+    except OSError:  # nettoyage au mieux : un fichier verrouillé ne doit pas masquer l'issue réelle
+        pass
+    finally:
+        change["lock"].release()
+
+
+# ================================================================= modifications sérialisées
+_locks: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+
+
+def _theme_lock() -> asyncio.Lock:
+    """Verrou des modifications de la charte, propre à la boucle d'événements (application mono-processus)."""
+    loop = asyncio.get_running_loop()
+    lock = _locks.get(loop)
+    if lock is None:
+        lock = _locks[loop] = asyncio.Lock()
+    return lock
+
+
+async def _begin_change(db: AsyncSession) -> ThemeSettings:
+    """Ouvre une modification de la charte : prend le verrou jusqu'à la fin de la transaction de ``db`` et relit
+    la ligne en base (valeurs à jour des fichiers de marque). Réentrant pour une même session."""
+    session = db.sync_session
+    change = session.info.get(_THEME_CHANGE)
+    if change is not None:
+        return change["theme"]
+    lock = _theme_lock()
+    await lock.acquire()
+    try:
+        await db.flush()  # aucune modification en attente ne doit être écrasée par la relecture
+        await db.connection()  # ouvre la transaction dont la fin libère le verrou
+        transaction = session.get_transaction()
+        theme = await get_theme(db, refresh=True)
+    except BaseException:
+        lock.release()
+        raise
+    session.info[_THEME_CHANGE] = {"lock": lock, "transaction": transaction, "theme": theme,
+                                   "rollback_files": [], "committed": False, "referenced": None}
+    return theme
+
+
+async def _touch(db: AsyncSession, theme: ThemeSettings) -> None:
+    """Nouvelle version de la charte, incrémentée en SQL (jamais deux contenus pour une même URL ?v=N)."""
+    await db.flush()
+    table = ThemeSettings.__table__
+    now = datetime.now()
+    version = (await db.execute(
+        update(table).where(table.c.id == THEME_ID)
+        .values(version=table.c.version + 1, updated_at=now).returning(table.c.version)
+    )).scalar_one()
+    set_committed_value(theme, "version", version)
+    set_committed_value(theme, "updated_at", now)
+    _mark_changed(db.sync_session)
 
 
 # ================================================================= couleurs
@@ -333,7 +511,6 @@ def color_warnings(theme: ThemeSettings) -> list[str]:
 
 async def update_colors(db: AsyncSession, values: Mapping[str, object]) -> ThemeSettings:
     """Enregistre les couleurs fournies (champs absents inchangés) ; tout est validé avant modification."""
-    theme = await get_theme(db)
     cleaned: dict[str, str] = {}
     for field in COLOR_FIELDS:
         if field in values:
@@ -343,18 +520,19 @@ async def update_colors(db: AsyncSession, values: Mapping[str, object]) -> Theme
     card = cleaned.get("card_color")
     if card and relative_luminance(card) < MIN_CARD_LUMINANCE:
         raise BusinessError("La couleur des cartes doit rester claire pour garantir la lisibilité du texte.")
+    theme = await _begin_change(db)
     for field, value in cleaned.items():
         setattr(theme, field, value)
-    _touch(theme)
+    await _touch(db, theme)
     return theme
 
 
 async def reset_colors(db: AsyncSession) -> ThemeSettings:
     """Rétablit la palette d'origine (teal) sans toucher aux logos, à la typographie ni aux documents."""
-    theme = await get_theme(db)
+    theme = await _begin_change(db)
     for field in COLOR_FIELDS:
         setattr(theme, field, DEFAULT_THEME[field])
-    _touch(theme)
+    await _touch(db, theme)
     return theme
 
 
@@ -366,10 +544,10 @@ async def update_typography(db: AsyncSession, font_family: str, density: str) ->
         raise BusinessError("Police inconnue.")
     if density not in DENSITIES:
         raise BusinessError("Densité d'affichage inconnue.")
-    theme = await get_theme(db)
+    theme = await _begin_change(db)
     theme.font_family = font_family
     theme.density = density
-    _touch(theme)
+    await _touch(db, theme)
     return theme
 
 
@@ -379,15 +557,26 @@ def _truthy(value: object) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "on", "yes", "oui"}
 
 
+def _strip_controls(text: str) -> str:
+    """Retire les caractères de contrôle (catégorie Unicode Cc : ESC, GS, NUL, BEL…) d'un texte de document.
+
+    Seul le saut de ligne est conservé (fins de ligne Windows / Mac normalisées), la tabulation devient une
+    espace : un formulaire forgé ne peut pas glisser de commande ESC/POS (tiroir-caisse, réinitialisation…)
+    dans les tickets imprimés.
+    """
+    text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\t", " ")
+    return "".join(ch for ch in text if ch == "\n" or unicodedata.category(ch) != "Cc")
+
+
 async def update_documents(db: AsyncSession, values: Mapping[str, object]) -> ThemeSettings:
     """Slogans (FR / AR), en-tête et pied de page des documents, affichage du logo sur les PDF.
 
-    ``show_logo_on_documents`` suit la sémantique d'une case à cocher : absente = décochée.
+    ``show_logo_on_documents`` suit la sémantique d'une case à cocher : absente = décochée. Les caractères de
+    contrôle sont retirés (``_strip_controls``) : ces textes sont imprimés tels quels sur les tickets ESC/POS.
     """
-    theme = await get_theme(db)
     cleaned: dict[str, str] = {}
     for field, limit in TEXT_LIMITS.items():
-        text = str(values.get(field, "") or "").replace("\r\n", "\n").strip()
+        text = _strip_controls(str(values.get(field, "") or "")).strip()
         if len(text) > limit:
             raise BusinessError("Texte trop long pour les documents émis.")
         if field in ("document_header", "document_footer"):
@@ -397,20 +586,29 @@ async def update_documents(db: AsyncSession, values: Mapping[str, object]) -> Th
         elif "\n" in text:
             text = " ".join(part.strip() for part in text.split("\n") if part.strip())
         cleaned[field] = text
+    theme = await _begin_change(db)
     for field, text in cleaned.items():
         setattr(theme, field, text)
     theme.show_logo_on_documents = _truthy(values.get("show_logo_on_documents"))
-    _touch(theme)
+    await _touch(db, theme)
     return theme
 
 
 # ================================================================= CSS dynamique
 def _font_faces() -> list[str]:
-    """Déclarations ``@font-face`` pour les fichiers .woff2 présents localement (aucun accès réseau)."""
+    """Déclarations ``@font-face`` pour les fichiers .woff2 présents localement (aucun accès réseau).
+
+    Le dossier n'est parcouru qu'une fois : résultat en cache, vidé par ``invalidate_theme_cache``.
+    """
+    return list(_font_faces_in(UI_FONTS_DIR))
+
+
+@functools.lru_cache(maxsize=8)
+def _font_faces_in(folder: Path) -> tuple[str, ...]:
     rules: list[str] = []
-    if not UI_FONTS_DIR.is_dir():
-        return rules
-    for path in sorted(UI_FONTS_DIR.glob("*.woff2")):
+    if not folder.is_dir():
+        return ()
+    for path in sorted(folder.glob("*.woff2")):
         match = FONT_WEIGHT_RE.match(path.name)
         if not match or match["key"] not in FONTS or not FONTS[match["key"]]["family"]:
             continue
@@ -419,7 +617,7 @@ def _font_faces() -> list[str]:
             f'@font-face {{ font-family: "{FONTS[match["key"]]["family"]}"; font-style: normal; '
             f'font-weight: {weight}; font-display: swap; src: url("/static/fonts/ui/{path.name}") format("woff2"); }}'
         )
-    return rules
+    return tuple(rules)
 
 
 def font_stack(key: str) -> str:
@@ -522,6 +720,17 @@ def _local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1] if isinstance(tag, str) else ""
 
 
+def _attribute_name(value: str) -> str:
+    """Nom d'attribut normalisé : sans espace de noms (« {uri}href », « xlink:href » → « href »), en minuscules.
+
+    Sert aussi à la valeur de ``attributeName`` des animations, qui est une chaîne simple (« xlink:href ») et
+    non un nom qualifié résolu par l'analyseur XML.
+    """
+    if not isinstance(value, str):
+        return ""
+    return value.rsplit("}", 1)[-1].rsplit(":", 1)[-1].strip().lower()
+
+
 def _dangerous_css(text: str) -> bool:
     """CSS refusé : ressource externe (url() hors fragment, @import, image-set), script, ou échappement CSS.
 
@@ -563,17 +772,26 @@ def sanitize_svg(data: bytes) -> bytes:
             # <style> ne doit contenir que du texte, et ce texte entier est contrôlé.
             if len(element) or _dangerous_css("".join(element.itertext())):
                 raise BusinessError(refused)
-        if name in {"set", "animate"}:
-            target = _local_name(element.attrib.get("attributeName", "")).lower()
-            if target == "href" or target.startswith("on"):
-                raise BusinessError(refused)
+        if name in SVG_ANIMATION_ELEMENTS:
+            # Une animation ne peut viser ni un lien (href / xlink:href, quel que soit le préfixe ou la casse)
+            # ni un gestionnaire d'événement : elle remplacerait la cible vérifiée par une URL externe.
+            for attribute, value in element.attrib.items():
+                if _attribute_name(attribute) == "attributename":
+                    target = _attribute_name(value)
+                    if target == "href" or target.startswith("on"):
+                        raise BusinessError(refused)
         for attribute, value in element.attrib.items():
-            attr = _local_name(attribute).lower()
+            attr = _attribute_name(attribute)
             compact = CONTROL_CHARS_RE.sub("", value).lower()
             if attr.startswith("on") or "javascript:" in compact or "vbscript:" in compact:
                 raise BusinessError(refused)
-            if attr == "href" and not (value.strip().startswith("#") or SVG_DATA_IMAGE_RE.match(value.strip())):
-                raise BusinessError(refused)
+            if attr == "href":
+                # Lien interne au document uniquement (« #id ») ; une image embarquée (data:image/…) n'est admise
+                # que sur <image> / <feImage>. Tout autre lien (https:, //hôte, chemin relatif…) sort du document.
+                target = value.strip()
+                embedded = name in SVG_IMAGE_ELEMENTS and SVG_DATA_IMAGE_RE.match(target)
+                if not (SVG_FRAGMENT_RE.match(target) or embedded):
+                    raise BusinessError(refused)
             if attr == "style" and _dangerous_css(value):
                 raise BusinessError(refused)
             # Attributs de présentation (fill, filter, mask…) : valeurs CSS, mêmes règles qu'un attribut style.
@@ -711,72 +929,67 @@ def _write_files(files: dict[str, bytes]) -> None:
 
 
 # ================================================================= fichiers de marque : opérations
-def _after_transaction(db: AsyncSession, on_commit: list[str], on_rollback: list[str]) -> None:
-    """Purge différée des fichiers de marque, selon l'issue de la transaction en cours de ``db``.
+def _referenced_files(names: set[str]) -> set[str]:
+    """Fichiers (principal et déclinaisons) correspondant aux noms référencés par la charte."""
+    return {path.name for name in names for path in _companions(name)}
 
-    Validée (commit réussi) : suppression des fichiers ``on_commit`` (anciens fichiers remplacés). Annulée
-    (rollback, échec du commit, session fermée sans commit) : suppression des fichiers ``on_rollback``
-    (nouveaux fichiers déjà écrits). La base ne référence ainsi jamais un fichier supprimé, et aucun fichier
-    orphelin ne subsiste. Les écouteurs deviennent inactifs dès la fin de la transaction concernée (SQLAlchemy
-    interdit de les retirer pendant la diffusion d'un événement ; ils disparaissent avec la session).
+
+def _purge_unreferenced(names: set[str]) -> list[str]:
+    """Supprime de ``data/media/branding`` les fichiers de marque qu'aucune référence ne désigne plus.
+
+    Appelé après un commit réussi, verrou des modifications détenu : aucun téléversement concurrent n'a pu
+    écrire de fichier pas encore validé. Seuls les noms produits par ce module (FILE_NAME_RE) sont concernés ;
+    un fichier référencé (ou l'une de ses déclinaisons) n'est jamais supprimé.
     """
-    session = db.sync_session
-    transaction = session.get_transaction()
-    if transaction is None:  # aucune transaction ouverte : rien n'a été écrit en base, état déjà définitif
-        for name in on_commit:
-            _remove_files(name)
-        return
-    state = {"committed": False, "done": False}
+    keep = _referenced_files(names)
+    removed: list[str] = []
+    folder = branding_dir()
+    if not folder.is_dir():
+        return removed
+    for path in sorted(folder.iterdir()):
+        if path.is_file() and FILE_NAME_RE.match(path.name) and path.name not in keep:
+            path.unlink(missing_ok=True)
+            removed.append(path.name)
+    return removed
 
-    def committed(_session) -> None:
-        if not state["done"]:  # after_commit n'est émis que pour la transaction racine
-            state["committed"] = True
 
-    def ended(_session, ending) -> None:
-        if state["done"] or ending is not transaction:
-            return
-        state["done"] = True
-        for name in (on_commit if state["committed"] else on_rollback):
-            try:
-                _remove_files(name)
-            except OSError:  # nettoyage au mieux : un fichier verrouillé ne doit pas masquer l'issue réelle
-                pass
-
-    event.listen(session, "after_commit", committed)
-    event.listen(session, "after_transaction_end", ended)
+def _rollback_files(db: AsyncSession) -> list[str]:
+    """Fichiers écrits par la modification en cours, supprimés si sa transaction est annulée."""
+    return db.sync_session.info[_THEME_CHANGE]["rollback_files"]
 
 
 async def save_image(db: AsyncSession, kind: str, upload: Any) -> ThemeSettings:
-    """Enregistre un logo / favicon téléversé (``UploadFile`` ou objet ayant ``read``) et remplace l'ancien."""
+    """Enregistre un logo / favicon téléversé (``UploadFile`` ou objet ayant ``read``) et remplace l'ancien.
+
+    Conversion hors verrou ; lecture de l'ancien fichier, écriture du nouveau et nouvelle version sous le verrou
+    des modifications (libéré à la fin de la transaction). Après un commit réussi, l'ancien fichier et tout
+    fichier orphelin sont purgés ; en cas d'échec, c'est le nouveau fichier qui est supprimé.
+    """
     if kind not in KIND_FIELDS:
         raise BusinessError("Type de fichier de marque inconnu.")
     if upload is None or not hasattr(upload, "read"):
         raise BusinessError("Aucun fichier sélectionné.")
     data = await upload.read(MAX_UPLOAD_BYTES + 1)
     files = await asyncio.to_thread(prepare_branding_files, kind, data)
-    theme = await get_theme(db)
-    field = KIND_FIELDS[kind]
-    previous = getattr(theme, field) or ""
-    await asyncio.to_thread(_write_files, files)
+    theme = await _begin_change(db)
     new_name = next(iter(files))
-    setattr(theme, field, new_name)
-    _touch(theme)
-    # L'ancien fichier n'est supprimé qu'APRÈS un commit réussi ; en cas d'échec, c'est le nouveau qui l'est.
-    _after_transaction(db, on_commit=[previous] if previous and previous != new_name else [], on_rollback=[new_name])
+    _rollback_files(db).append(new_name)
+    await asyncio.to_thread(_write_files, files)
+    setattr(theme, KIND_FIELDS[kind], new_name)
+    await _touch(db, theme)
     return theme
 
 
 async def delete_image(db: AsyncSession, kind: str) -> ThemeSettings:
+    """Retire un fichier de marque ; le fichier n'est supprimé du disque qu'après un commit réussi."""
     if kind not in KIND_FIELDS:
         raise BusinessError("Type de fichier de marque inconnu.")
-    theme = await get_theme(db)
+    theme = await _begin_change(db)
     field = KIND_FIELDS[kind]
-    previous = getattr(theme, field) or ""
-    if not previous:
+    if not (getattr(theme, field) or ""):
         raise BusinessError("Aucun fichier à supprimer.")
     setattr(theme, field, "")
-    _touch(theme)
-    _after_transaction(db, on_commit=[previous], on_rollback=[])
+    await _touch(db, theme)
     return theme
 
 
@@ -801,7 +1014,7 @@ def restore_branding_files(archive: Any, prefix: str) -> list[str]:
 async def reconcile_branding(db: AsyncSession) -> dict[str, list[str]]:
     """Remet en cohérence la base et le dossier des fichiers de marque (après une restauration) :
     vide les champs dont le fichier est absent et supprime les fichiers que la charte ne référence plus."""
-    theme = await get_theme(db)
+    theme = await _begin_change(db)
     cleared: list[str] = []
     for kind, field in KIND_FIELDS.items():
         name = getattr(theme, field) or ""
@@ -809,15 +1022,8 @@ async def reconcile_branding(db: AsyncSession) -> dict[str, list[str]]:
             setattr(theme, field, "")
             cleared.append(kind)
     if cleared:
-        _touch(theme)
-    referenced = {path.name for field in KIND_FIELDS.values() for path in _companions(getattr(theme, field) or "")}
-    removed: list[str] = []
-    folder = branding_dir()
-    if folder.is_dir():
-        for path in sorted(folder.iterdir()):
-            if path.is_file() and FILE_NAME_RE.match(path.name) and path.name not in referenced:
-                path.unlink(missing_ok=True)
-                removed.append(path.name)
+        await _touch(db, theme)
+    removed = _purge_unreferenced({getattr(theme, field) or "" for field in KIND_FIELDS.values()})
     return {"cleared": cleared, "removed": removed}
 
 
@@ -841,6 +1047,12 @@ def logo_path_for_documents(theme: ThemeSettings) -> Path | None:
     """Logo raster (PNG) utilisable par ReportLab, ou None (logo absent, désactivé, ou SVG sans rendu PNG)."""
     if not theme.show_logo_on_documents:
         return None
+    return printable_logo_path(theme)
+
+
+def printable_logo_path(theme: ThemeSettings) -> Path | None:
+    """Logo principal enregistré que les PDF savent imprimer (raster ou SVG doté d'un rendu PNG), quel que soit
+    l'état de l'option « logo sur les documents » ; None sinon."""
     path = branding_file(theme, "logo")
     if path is None:
         return None
