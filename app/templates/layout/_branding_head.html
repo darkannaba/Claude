@@ -1,0 +1,13 @@
+{# Feuilles de style et favicon de la charte (inclus par layout/base.html et errors/error.html).
+   Ordre impératif : app.css (Tailwind compilé, valeurs par défaut des variables) PUIS theme-custom.css
+   (variables de la charte de l'hôtel, ?v=<version> pour invalider le cache à chaque modification). #}
+{% set _brand = branding if branding is defined and branding else {} %}
+{% if _brand.favicon %}
+  <link rel="icon" type="image/png" sizes="64x64" href="{{ _brand.favicon }}">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ _brand.favicon_32 }}">
+  <link rel="apple-touch-icon" href="{{ _brand.favicon }}">
+{% else %}
+  <link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml">
+{% endif %}
+  <link rel="stylesheet" href="/static/css/app.css?v={{ app_version }}">
+  <link rel="stylesheet" href="{{ _brand.css or '/static/css/theme-custom.css' }}" id="theme-custom-css">

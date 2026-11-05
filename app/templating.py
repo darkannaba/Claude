@@ -15,6 +15,7 @@ from app.models import (
     CHANNELS, GENDERS, GUEST_STATUSES, ID_TYPES, ITEM_KINDS, ORDER_STATUSES, OUTLETS, PAYMENT_KINDS,
     PAYMENT_METHODS, RES_STATUSES, ROLES, ROOM_STATUSES, STOCK_REASONS,
 )
+from app.services import theme_manager as tm
 from app.services.common import format_money
 from app.services.i18n import LANGS, activate, direction, js_labels, t
 from app.services.security import get_csrf_token
@@ -120,6 +121,25 @@ templates.env.globals.update(
     ROLES=ROLES, CHANNELS=CHANNELS,
 )
 
+# Jetons de conception de la charte (piles de polices, densités, algorithme des nuances) : lus par l'aperçu
+# en direct de la page « Thème et marque » (app/static/js/app.js) pour reproduire exactement build_css().
+templates.env.globals["theme_tokens"] = {
+    "fonts": {key: {"stack": tm.font_stack(key), "rtl": tm.rtl_font_stack(key)} for key in tm.FONTS},
+    "densities": tm.DENSITIES,
+    "shade_mix": {str(shade): [towards, weight] for shade, (towards, weight) in tm.SHADE_MIX.items()},
+    "known_palettes": {base: {str(k): v for k, v in shades.items()} for base, shades in tm.KNOWN_PALETTES.items()},
+    "dark_card": tm.DARK_CARD, "dark_surface": tm.DARK_SURFACE, "light_surface": tm.LIGHT_SURFACE,
+    "dark_text": tm.DARK_TEXT, "light_text": tm.LIGHT_TEXT,
+    "min_white_contrast": tm.MIN_WHITE_CONTRAST, "min_card_luminance": tm.MIN_CARD_LUMINANCE,
+    "min_text_contrast": tm.MIN_TEXT_CONTRAST,
+    "max_upload_bytes": tm.MAX_UPLOAD_BYTES,
+}
+
+# Dernière charte connue : les pages d'erreur (render_error, sans session de base de données) réutilisent
+# les URL versionnées de la feuille de thème, du logo et du favicon du dernier rendu réussi.
+_DEFAULT_BRANDING = {"css": tm.CSS_URL, "logo": "", "logo_dark": "", "favicon": "", "favicon_32": ""}
+_last_branding: dict[str, str] = dict(_DEFAULT_BRANDING)
+
 
 def navigation(user, modules: dict[str, str]) -> list[dict]:
     if user is None:
@@ -164,6 +184,11 @@ async def render(request: Request, db: AsyncSession, name: str, status_code: int
     # Les messages flash sont stockés en français et traduits uniquement à l'affichage.
     flashes = [{**f, "msg": t(f.get("msg", ""), lang)} for f in request.session.pop("flashes", [])]
     nav = [{**item, "label": t(item["label"], lang)} for item in navigation(user, modules)]
+    # Charte graphique (white-label) : ``theme`` et ``branding`` (URL versionnées ?v=<version>) pour tous les templates.
+    theme_ctx = tm.theme_context(await tm.get_theme(db))
+    _last_branding.clear()
+    _last_branding.update(theme_ctx["branding"])
+    context.update(theme_ctx)
     context.update(
         hs=hs, modules=modules, user=user, flashes=flashes,
         today=today_of(hs), now=now_of(hs), csrf_token=get_csrf_token(request.session),
@@ -178,7 +203,7 @@ def render_error(request: Request, status_code: int, title: str, message: str):
     return templates.TemplateResponse(
         request, "errors/error.html",
         {"status_code": status_code, "title": t(title, lang), "message": t(message, lang),
-         "lang": lang, "dir": direction(lang),
+         "lang": lang, "dir": direction(lang), "theme": None, "branding": dict(_last_branding),
          "csrf_token": get_csrf_token(request.session) if "session" in request.scope else ""},
         status_code=status_code,
     )

@@ -14,7 +14,7 @@ from app.models.room import RatePeriod, Room, RoomType
 from app.models.system import FeatureFlag
 from app.models.user import ROLES, User
 from app.database import SessionLocal
-from app.services import licensing, printing
+from app.services import licensing, printing, theme_manager
 from app.services.audit_log import log_action
 from app.services.common import BusinessError, to_date, to_int
 from app.services.security import hash_password, password_problems
@@ -58,9 +58,10 @@ async def settings_save(request: Request, db: DbSession, user: AdminUser):
 @router.post("/printers/test")
 async def printer_test(request: Request, db: DbSession, user: AdminUser):
     hs = await load_hotel_settings(db)
+    theme = await theme_manager.get_theme(db)
 
     async def action():
-        await printing.print_raw(hs.thermal_printer_host, hs.thermal_printer_port, printing.test_page(hs))
+        await printing.print_raw(hs.thermal_printer_host, hs.thermal_printer_port, printing.test_page(hs, theme))
 
     await attempt(request, db, action, "Page de test envoyée à l'imprimante ticket.")
     return redirect("/admin")

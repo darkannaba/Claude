@@ -31,6 +31,7 @@ from app.database import run_migrations
 from app.models.backup import BACKUP_DESTINATIONS, BackupJob
 from app.models.user import User
 from app.services import backup
+from app.services import theme_manager
 from app.services.audit_log import log_action
 from app.services.common import BusinessError
 from app.services.settings import HotelSettings, now_of
@@ -219,6 +220,14 @@ def extract_database(archive: Path, target_dir: Path) -> Path:
         with zf.open(DATABASE_NAME) as source, target.open("wb") as destination:
             shutil.copyfileobj(source, destination)
     return target
+
+
+def extract_branding(archive: Path) -> list[str]:
+    """Restaure les fichiers de marque (logo, favicon) de l'archive : la base restaurée y fait référence."""
+    if not zipfile.is_zipfile(archive):
+        return []
+    with zipfile.ZipFile(archive) as zf:
+        return theme_manager.restore_branding_files(zf, MEDIA_PREFIX)
 
 
 def upload_target(filename: str) -> Path:
@@ -689,6 +698,7 @@ async def restore_archive(db: AsyncSession, archive: Path, hs: HotelSettings, us
         await db.commit()  # aucune transaction ouverte pendant l'écrasement de la base
         db.expunge_all()
         await asyncio.to_thread(backup.write_database, db_file)
+        await asyncio.to_thread(extract_branding, archive)
     finally:
         if db_file != archive:
             _remove_sqlite_files(db_file)
@@ -699,6 +709,11 @@ async def restore_archive(db: AsyncSession, archive: Path, hs: HotelSettings, us
         logger.exception("Migrations après restauration en échec")
         migration_error = readable_error(exc)
     await _merge_history(db, history)
+    branding_note = ""
+    if not migration_error:
+        branding = await theme_manager.reconcile_branding(db)
+        if branding["cleared"]:
+            branding_note = " ; fichiers de marque absents de l'archive : " + ", ".join(branding["cleared"])
     safety_job = BackupJob(created_at=when, finished_at=when, destination="local", trigger="avant_restauration",
                            status="success", archive_name=safety.name, local_path=str(safety.path),
                            size_bytes=safety.size, checksum=safety.checksum)
@@ -709,6 +724,7 @@ async def restore_archive(db: AsyncSession, archive: Path, hs: HotelSettings, us
     if manifest.get("created_at"):
         details += f" (archive du {manifest['created_at']}, version {manifest.get('app_version', '?')})"
     details += f" ; sauvegarde de sécurité {safety.name}"
+    details += branding_note
     if migration_error:
         details += f" ; migrations : {migration_error}"
     await log_action(db, actor, "backup_restored", "backup", safety_job.id, details, when)

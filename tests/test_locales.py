@@ -20,10 +20,12 @@ from app.models.invoice import ITEM_KINDS, PAYMENT_KINDS, PAYMENT_METHODS
 from app.models.ota import OTA_CHANNELS, OTA_PERMISSIONS
 from app.models.pos import ORDER_STATUSES, OUTLETS, STOCK_REASONS
 from app.models.room import ROOM_STATUSES
+from app.models.theme import BRANDING_KINDS, THEME_DENSITIES, THEME_FONTS
 from app.models.user import ROLES
 from app.services.i18n import DEFAULT_LANG, LANGS, LOCALES_DIR, catalog, reload_catalogs
 from app.services.licensing import FEATURES, LICENSE_TYPES
 from app.services.settings import MODULES, HotelSettings
+from app.services.theme_manager import COLOR_HELPS, COLOR_LABELS
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "app" / "templates"
 TRANSLATED_LANGS = sorted(code for code in LANGS if code != DEFAULT_LANG)
@@ -89,6 +91,11 @@ def label_dictionaries() -> dict[str, list[str]]:
         "FEATURES": list(FEATURES.values()),
         "LICENSE_TYPES": list(LICENSE_TYPES.values()),
         "MODULES": list(MODULES.values()),
+        "THEME_FONTS": list(THEME_FONTS.values()),
+        "THEME_DENSITIES": list(THEME_DENSITIES.values()),
+        "BRANDING_KINDS": list(BRANDING_KINDS.values()),
+        "COLOR_LABELS": list(COLOR_LABELS.values()),
+        "COLOR_HELPS": list(COLOR_HELPS.values()),
     }
     titles, helps, group_names = [], [], []
     for info in HotelSettings.model_fields.values():

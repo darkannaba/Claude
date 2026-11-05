@@ -2,11 +2,17 @@
 
 Langues des tickets : français (``fr``, défaut) ou anglais (``en``). Les imprimantes thermiques n'ont pas de police
 arabe (le flux est réduit à l'ASCII) : une demande en arabe (``ar``) ou bilingue (``bi``) est imprimée en anglais.
+
+Charte de l'établissement : ``invoice_receipt`` / ``pos_receipt`` / ``test_page`` acceptent ``theme``
+(``ThemeSettings`` ou ``None`` = ticket historique). Le slogan (latin) est imprimé sous le nom de l'hôtel, le texte
+libre d'en-tête après le bloc de l'hôtel et le pied de document à la fin du ticket. Pas de logo bitmap : les textes
+sont translittérés comme le reste du ticket (accents simplifiés, l'arabe n'est pas imprimable).
 """
 from __future__ import annotations
 
 import asyncio
 import socket
+import textwrap
 import unicodedata
 
 from app.models.invoice import PAYMENT_KINDS
@@ -110,17 +116,53 @@ def _amount(amount, sym: str) -> str:
     return format_money(amount, sym).replace(" ", " ")
 
 
-def _header(printer: EscPos, hs: HotelSettings, lang: str = "fr") -> None:
+def _theme_text(theme, field: str) -> str:
+    return str(getattr(theme, field, "") or "").strip() if theme is not None else ""
+
+
+def _wrapped(text: str, width: int) -> list[str]:
+    """Lignes imprimables d'un texte libre : translittération ASCII, découpage à la largeur du ticket ; les lignes
+    vides de lettres (texte uniquement en arabe) sont écartées."""
+    lines: list[str] = []
+    for paragraph in text.splitlines():
+        plain = " ".join(_ascii(paragraph).split())
+        if plain:
+            lines.extend(textwrap.wrap(plain, width) or [plain])
+    return lines
+
+
+def _theme_block(printer: EscPos, theme, field: str) -> None:
+    """Imprime, centré, un texte libre de la charte (slogan, en-tête ou pied de document) s'il est renseigné."""
+    lines = _wrapped(_theme_text(theme, field), printer.width)
+    if not lines:
+        return
+    printer.align("center")
+    for line in lines:
+        printer.text(line)
+
+
+def _header(printer: EscPos, hs: HotelSettings, lang: str = "fr", theme=None) -> None:
     printer.align("center").bold().size(True).text(hs.hotel_name).size(False).bold(False)
+    _theme_block(printer, theme, "slogan")  # alignement centré conservé pour l'adresse
     printer.text(hs.hotel_address)
     if hs.hotel_phone:
         printer.text(f"{_label('Tel.', lang)} {hs.hotel_phone}")
     if hs.hotel_nif:
         printer.text(f"NIF {hs.hotel_nif}")
     printer.align("left").rule()
+    if _wrapped(_theme_text(theme, "document_header"), printer.width):
+        _theme_block(printer, theme, "document_header")
+        printer.align("left").rule()
 
 
-def invoice_receipt(view: InvoiceView, hs: HotelSettings, lang: str = "fr") -> bytes:
+def _footer(printer: EscPos, theme) -> None:
+    """Pied de document de la charte, séparé du pied de facture par un filet."""
+    if _wrapped(_theme_text(theme, "document_footer"), printer.width):
+        printer.align("left").rule()
+        _theme_block(printer, theme, "document_footer")
+
+
+def invoice_receipt(view: InvoiceView, hs: HotelSettings, lang: str = "fr", theme=None) -> bytes:
     """Ticket 80 mm d'une facture / proforma, en français (défaut) ou en anglais.
 
     Les imprimantes thermiques n'ont pas de police arabe : ``lang="ar"`` (ou ``"bi"``) imprime en anglais.
@@ -128,7 +170,7 @@ def invoice_receipt(view: InvoiceView, hs: HotelSettings, lang: str = "fr") -> b
     lang = receipt_lang(lang)
     printer = EscPos(hs.receipt_width_chars)
     sym = hs.currency_symbol
-    _header(printer, hs, lang)
+    _header(printer, hs, lang, theme)
     res = view.reservation
     printer.align("center").bold().text(_label(view.title, lang)).bold(False).text(f"N {view.number}").align("left")
     printer.text(f"{_label('Client :', lang)} {view.customer_name}")
@@ -147,11 +189,13 @@ def invoice_receipt(view: InvoiceView, hs: HotelSettings, lang: str = "fr") -> b
         printer.pair(f"{_label(PAYMENT_KINDS.get(payment.kind, payment.kind), lang)} {payment.paid_at:%d/%m}",
                      _amount(payment.signed_amount, sym))
     printer.bold().pair(_label("SOLDE", lang), _amount(view.balance, sym)).bold(False)
-    printer.rule().align("center").text(_label(hs.invoice_footer, lang)).text(res.code).feed(4).cut()
+    printer.rule().align("center").text(_label(hs.invoice_footer, lang)).text(res.code)
+    _footer(printer, theme)
+    printer.feed(4).cut()
     return printer.bytes()
 
 
-def pos_receipt(order: PosOrder, hs: HotelSettings, lang: str = "fr") -> bytes:
+def pos_receipt(order: PosOrder, hs: HotelSettings, lang: str = "fr", theme=None) -> bytes:
     """Ticket 80 mm d'une addition de point de vente, en français (défaut) ou en anglais.
 
     Les imprimantes thermiques n'ont pas de police arabe : ``lang="ar"`` (ou ``"bi"``) imprime en anglais.
@@ -159,7 +203,7 @@ def pos_receipt(order: PosOrder, hs: HotelSettings, lang: str = "fr") -> bytes:
     lang = receipt_lang(lang)
     printer = EscPos(hs.receipt_width_chars)
     sym = hs.currency_symbol
-    _header(printer, hs, lang)
+    _header(printer, hs, lang, theme)
     printer.align("center").bold().text(_label(order.outlet_label, lang)).bold(False)
     printer.text(f"{_label('Addition', lang)} {order.number}").align("left")
     if order.label:
@@ -173,7 +217,9 @@ def pos_receipt(order: PosOrder, hs: HotelSettings, lang: str = "fr") -> bytes:
         printer.feed(1).text(_label("Signature client :", lang)).feed(2)
     elif order.status == "paid":
         printer.text(f"{_label('Regle :', lang)} {order.payment_method}")
-    printer.align("center").text(_label(hs.invoice_footer, lang)).feed(4).cut()
+    printer.align("center").text(_label(hs.invoice_footer, lang))
+    _footer(printer, theme)
+    printer.feed(4).cut()
     return printer.bytes()
 
 
@@ -191,9 +237,10 @@ async def print_raw(host: str, port: int, data: bytes) -> None:
     await asyncio.to_thread(send_raw, host, port, data)
 
 
-def test_page(hs: HotelSettings) -> bytes:
+def test_page(hs: HotelSettings, theme=None) -> bytes:
     printer = EscPos(hs.receipt_width_chars)
-    _header(printer, hs)
+    _header(printer, hs, theme=theme)
     printer.align("center").bold().text("TEST D'IMPRESSION").bold(False).text("Imprimante ticket operationnelle")
+    _footer(printer, theme)
     printer.feed(4).cut()
     return printer.bytes()

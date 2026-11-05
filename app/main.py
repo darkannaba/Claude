@@ -23,8 +23,8 @@ from app.database import SessionLocal
 from app.deps import AccessDenied, CsrfError, LoginRequired, PasswordChangeRequired, csrf_protect
 from app.middlewares.language import LanguageMiddleware
 from app.middlewares.license_checker import LicenseCheckerMiddleware
-from app.routers import admin, auth, backup, crm, housekeeping, i18n, licensing, ota_channel, pms, pos, reports
-from app.services import scheduler
+from app.routers import admin, auth, backup, crm, housekeeping, i18n, licensing, ota_channel, pms, pos, reports, theme
+from app.services import scheduler, theme_manager
 from app.services.security import SecurityHeadersMiddleware
 from app.services.seed import bootstrap, print_created_users
 from app.templating import render_error
@@ -53,6 +53,7 @@ def configure_logging() -> None:
 async def lifespan(_app: FastAPI):
     configure_logging()
     created = await bootstrap()
+    await theme_manager.ensure_theme()
     print_created_users(created)
     task = asyncio.create_task(scheduler.run_forever()) if config.scheduler_enabled else None
     logger.info("Application démarrée (v%s).", __version__)
@@ -79,6 +80,9 @@ def create_app() -> FastAPI:
         max_age=config.session_max_age, same_site="lax", https_only=config.cookie_secure,
     )
     app.add_middleware(SecurityHeadersMiddleware)
+    # Feuille CSS de la charte (/static/css/theme-custom.css) : déclarée AVANT le montage /static,
+    # sinon StaticFiles intercepterait la requête et renverrait 404.
+    app.include_router(theme.public)
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     for module in (auth, pms, crm, housekeeping, pos, reports, admin):
@@ -86,6 +90,7 @@ def create_app() -> FastAPI:
     app.include_router(licensing.router)
     app.include_router(backup.router)
     app.include_router(i18n.router)
+    app.include_router(theme.router)
     app.include_router(ota_channel.api)
     app.include_router(ota_channel.admin)
 

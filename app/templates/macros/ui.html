@@ -11,18 +11,20 @@
   <input type="hidden" name="next" value="{{ current_url or current_path or '/' }}">
   {% for code, name in LANGS.items() %}
     <button type="submit" name="lang" value="{{ code }}" title="{{ name }}" {% if code == lang %}aria-current="true"{% endif %}
-            class="rounded-md px-2 py-1 leading-none transition {{ 'bg-brand-600 text-white' if code == lang else ('hover:bg-white/20 hover:text-white' if variant == 'dark' else 'hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-700 dark:hover:text-white') }}">{{ code|upper }}</button>
+            class="rounded-md px-2 py-1 leading-none transition {{ 'brand-solid' if code == lang else ('hover:bg-white/20 hover:text-white' if variant == 'dark' else 'hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-700 dark:hover:text-white') }}">{{ code|upper }}</button>
   {% endfor %}
 </form>
 {%- endmacro %}
 
 {% macro res_badge(status) -%}
-{%- set colors = {'confirmed': 'badge-blue', 'checked_in': 'badge-teal', 'checked_out': 'badge-slate', 'cancelled': 'badge-red', 'no_show': 'badge-amber'} -%}
+{%- set colors = {'confirmed': 'badge-accent', 'checked_in': 'badge-teal', 'checked_out': 'badge-slate', 'cancelled': 'badge-red', 'no_show': 'badge-amber'} -%}
 <span class="{{ colors.get(status, 'badge-slate') }}">{{ RES_STATUSES.get(status, status)|tr }}</span>
 {%- endmacro %}
 
 {% macro room_badge(status) -%}
-{%- set colors = {'available': 'badge-green', 'occupied': 'badge-blue', 'dirty': 'badge-amber', 'maintenance': 'badge-red'} -%}
+{#- Couleurs des statuts de la charte (Administration > Thème) : classes .badge-status-* de input.css,
+    écrites en toutes lettres pour que Tailwind les conserve à la compilation. -#}
+{%- set colors = {'available': 'badge-status-available', 'occupied': 'badge-status-occupied', 'dirty': 'badge-status-dirty', 'maintenance': 'badge-status-maintenance'} -%}
 <span class="{{ colors.get(status, 'badge-slate') }}">{{ ROOM_STATUSES.get(status, status)|tr }}</span>
 {%- endmacro %}
 

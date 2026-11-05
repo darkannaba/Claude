@@ -1,0 +1,335 @@
+{% extends "layout/base.html" %}
+{% import "macros/ui.html" as ui with context %}
+{% block title %}{{ _("Thème et image de marque") }}{% endblock %}
+{% block content %}
+{#- Page « Thème et marque » : chaque section envoie son propre formulaire (routes /admin/theme/*), l'aperçu en
+    direct (composant Alpine « themeEditor » défini dans app/static/js/app.js) reflète les saisies avant tout
+    enregistrement. Données initiales dans un bloc JSON : la CSP interdit tout script en ligne. -#}
+{% set rtl = (dir == 'rtl') %}
+{% set kind_urls = {'logo': branding.logo, 'logo-dark': (branding.logo_dark if theme.logo_dark_file else ''), 'favicon': branding.favicon} %}
+{% set name_fields = identity_fields|selectattr('name', 'in', ['hotel_name', 'hotel_name_ar'])|list %}
+{% set legal_fields = identity_fields|rejectattr('name', 'in', ['hotel_name', 'hotel_name_ar'])|list %}
+{% set identity = {} %}{% for f in identity_fields %}{% if identity.update({f.name: f.value}) %}{% endif %}{% endfor %}
+{#- Textes d'exemple de l'aperçu : langue de la page en LTR (français si la page est en arabe), arabe en RTL. -#}
+{% set sample_sources = [
+  ('dashboard', "Tableau de bord", 'لوحة القيادة'),
+  ('planning', "Planning", 'التخطيط'),
+  ('bookings', "Réservations", 'الحجوزات'),
+  ('search', "Rechercher", 'بحث…'),
+  ('room', "Chambre 101 · arrivée du jour", 'الغرفة 101 · الوصول اليوم'),
+  ('text', "Texte d'exemple affiché dans la police et la densité choisies.", 'نص تجريبي يعرض الخط المختار وكثافة الواجهة.'),
+  ('link', "Voir la réservation", 'عرض الحجز'),
+  ('checkin', "Enregistrer l'arrivée", 'تسجيل الوصول'),
+  ('print', "Imprimer", 'طباعة'),
+  ('cancel', "Annuler", 'إلغاء'),
+  ('guest', "Nom du client", 'اسم الزبون'),
+  ('invoice', "Facture n° F-2026-0001", 'فاتورة رقم F-2026-0001'),
+  ('available', ROOM_STATUSES['available'], 'شاغرة'),
+  ('occupied', ROOM_STATUSES['occupied'], 'مشغولة'),
+  ('dirty', ROOM_STATUSES['dirty'], 'للتنظيف'),
+  ('maintenance', ROOM_STATUSES['maintenance'], 'صيانة'),
+] %}
+{% set samples = {'ltr': {}, 'rtl': {}} %}
+{% for key, source, arabic in sample_sources %}{% if samples.ltr.update({key: (source if lang == 'ar' else source|tr)}) or samples.rtl.update({key: arabic}) %}{% endif %}{% endfor %}
+{% set sample = samples.rtl if rtl else samples.ltr %}
+{% set legal_json = [] %}{% for f in legal_fields %}{% if legal_json.append({'name': f.name, 'short': f.label|tr, 'value': f.value}) %}{% endif %}{% endfor %}
+<script type="application/json" id="theme-editor-data">{{ {
+  'fields': color_fields,
+  'font': theme.font_family,
+  'density': theme.density,
+  'current': kind_urls,
+  'hotel_name': identity.get('hotel_name', ''),
+  'hotel_name_ar': identity.get('hotel_name_ar', ''),
+  'slogan': theme.slogan,
+  'slogan_ar': theme.slogan_ar,
+  'document_header': theme.document_header,
+  'document_footer': theme.document_footer,
+  'doc_logo': theme.show_logo_on_documents,
+  'legal': legal_json,
+  'tokens': theme_tokens,
+  'samples': samples,
+  'rtl': rtl,
+  'messages': {
+    'too_big': _("Fichier trop volumineux (2 Mo maximum)."),
+    'bad_type': _("Format d'image non pris en charge (PNG, WEBP, JPEG ou SVG)."),
+    'favicon_type': _("Le favicon doit être une image PNG, WEBP ou JPEG."),
+    'bad_hex': _("Couleur invalide : utilisez le format #rrggbb (ex. #0d9488)."),
+  },
+}|tojson }}</script>
+
+<div class="flex flex-wrap items-end justify-between gap-3">
+  <div class="text-start">
+    <h1 class="page-title">{{ _("Thème et image de marque") }}</h1>
+    <p class="page-subtitle">{{ _("Logo, couleurs, typographie et documents émis : la charte s'applique à toute l'interface sans recompilation.") }}</p>
+  </div>
+  <a class="btn-secondary btn-sm" href="{{ branding.css }}" target="_blank" rel="noopener">{{ icon('document', 'h-4 w-4') }} {{ _("Feuille CSS générée") }}</a>
+</div>
+{% include "admin/_nav.html" %}
+
+<div id="theme-editor" x-data="themeEditor" class="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_27rem]">
+  <div class="min-w-0 space-y-5">
+
+    {# ------------------------------------------------------------------ identité #}
+    <section class="card space-y-4" aria-labelledby="theme-identity-title">
+      <div class="card-title" id="theme-identity-title">{{ icon('building', 'h-4 w-4') }} {{ _("Identité de l'établissement") }}</div>
+      <p class="help">{{ _("Nom et slogan affichés dans la barre latérale, sur la page de connexion et sur les documents. Le slogan arabe remplace le slogan français lorsque l'interface est en arabe.") }}</p>
+      <div class="grid gap-4 sm:grid-cols-2">
+        {% for f in name_fields %}
+        <label class="block"><span class="label">{{ f.label|tr }}</span>
+          <input class="input" name="{{ f.name }}" form="theme-documents-form" value="{{ f.value }}" maxlength="160"
+                 x-model="identity.{{ f.name }}" {% if f.name == 'hotel_name' %}required{% endif %} {% if f.name.endswith('_ar') %}dir="rtl" lang="ar"{% endif %}></label>
+        {% endfor %}
+        <label class="block"><span class="label">{{ _("Slogan") }}</span>
+          <input class="input" name="slogan" form="theme-documents-form" value="{{ theme.slogan }}" maxlength="200" x-model="identity.slogan"
+                 placeholder="{{ _('Ex. : Votre escale au cœur d\'Annaba') }}"></label>
+        <label class="block"><span class="label">{{ _("Slogan (arabe)") }}</span>
+          <input class="input" name="slogan_ar" form="theme-documents-form" value="{{ theme.slogan_ar }}" maxlength="200" x-model="identity.slogan_ar" dir="rtl" lang="ar"></label>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <button class="btn-primary" type="submit" form="theme-documents-form">{{ icon('check', 'h-4 w-4') }} {{ _("Enregistrer l'identité et les documents") }}</button>
+        <span class="help">{{ _("Ce bouton enregistre aussi la section « Documents émis ».") }}</span>
+      </div>
+    </section>
+
+    {# ------------------------------------------------------------------ logos et favicon #}
+    <section class="card space-y-4" aria-labelledby="theme-files-title">
+      <div class="card-title" id="theme-files-title">{{ icon('upload', 'h-4 w-4') }} {{ _("Logos et favicon") }}</div>
+      <p class="help">{{ _("Formats acceptés : PNG, WEBP, JPEG ou SVG (2 Mo maximum). Le favicon doit être une image PNG, WEBP ou JPEG.") }}</p>
+      <div class="grid gap-4 lg:grid-cols-3">
+        {% for kind, label in branding_kinds.items() %}
+        {% set url = kind_urls[kind] %}
+        <div class="space-y-3 rounded-lg border border-slate-200 p-4 dark:border-slate-800" data-branding-kind="{{ kind }}">
+          <div class="text-sm font-semibold">{{ label|tr }}</div>
+          <p class="help">
+            {% if kind == 'logo' %}{{ _("Fond clair : barre supérieure, documents et pages en mode clair. Redimensionné à 1024 × 512 px au maximum, proportions conservées.") }}
+            {% elif kind == 'logo-dark' %}{{ _("Fond foncé : barre latérale, page de connexion et mode sombre. Facultatif : à défaut, le logo principal est utilisé.") }}
+            {% else %}{{ _("Icône de l'onglet du navigateur : recadrée en carré et convertie en PNG 64 × 64 et 32 × 32.") }}{% endif %}
+          </p>
+          {# Aperçu : fichier choisi (URL blob locale, avant envoi) ou fichier enregistré. #}
+          <div class="flex h-24 items-center justify-center rounded-md border border-dashed {{ 'border-slate-600 bg-slate-900' if kind == 'logo-dark' else 'border-slate-300 bg-white dark:border-slate-700' }} p-2">
+            <template x-if="logoOf('{{ kind }}', true)">
+              <img :src="logoOf('{{ kind }}', true)" alt="{{ label|tr }}" class="{{ 'h-16 w-16' if kind == 'favicon' else 'h-16 w-auto max-w-full' }} object-contain">
+            </template>
+            <template x-if="!logoOf('{{ kind }}', true)">
+              <span class="text-xs {{ 'text-slate-400' if kind == 'logo-dark' else 'text-slate-500' }}">{{ _("Aucun fichier") }}</span>
+            </template>
+          </div>
+          {% if url %}<noscript><img src="{{ url }}" alt="{{ label|tr }}" class="h-12 max-w-[10rem] object-contain"></noscript>{% endif %}
+          <p class="text-xs font-medium text-amber-700 dark:text-amber-400" x-show="pending['{{ kind }}']" x-cloak>{{ _("Aperçu local : le fichier n'est pas encore envoyé.") }}</p>
+          <p class="text-xs font-medium text-rose-600 dark:text-rose-400" x-show="errors['{{ kind }}']" x-cloak x-text="errors['{{ kind }}']"></p>
+          <form method="post" action="/admin/theme/upload/{{ kind }}" enctype="multipart/form-data" class="space-y-2">{{ ui.csrf() }}
+            <input type="file" name="file" required class="block w-full text-xs file:me-2 file:rounded-md file:border-0 file:bg-brand-50 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-brand-700 dark:file:bg-slate-800 dark:file:text-brand-300"
+                   accept="{{ 'image/png,image/webp,image/jpeg' if kind == 'favicon' else 'image/png,image/webp,image/jpeg,image/svg+xml' }}"
+                   aria-label="{{ label|tr }}" @change="pick('{{ kind }}', $event)">
+            <div class="flex flex-wrap gap-2">
+              <button class="btn-primary btn-sm" type="submit" :disabled="!!errors['{{ kind }}']">{{ icon('upload', 'h-4 w-4') }} {{ _("Téléverser") }}</button>
+              <button class="btn-ghost btn-sm" type="button" x-show="pending['{{ kind }}']" x-cloak @click="clearPick('{{ kind }}', $event)">{{ _("Annuler la sélection") }}</button>
+            </div>
+          </form>
+          {% if url %}
+          <form method="post" action="/admin/theme/delete/{{ kind }}" data-confirm="{{ _('Supprimer ce fichier de marque ?') }}">{{ ui.csrf() }}
+            <button class="btn-danger btn-sm" type="submit">{{ icon('trash', 'h-4 w-4') }} {{ _("Supprimer") }}</button>
+          </form>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <p class="help">{% if document_logo %}{{ _("Le logo figure sur les factures et fiches de police.") }}{% else %}{{ _("Pour les PDF, téléversez un logo PNG, WEBP ou JPEG.") }}{% endif %}</p>
+    </section>
+
+    {# ------------------------------------------------------------------ couleurs #}
+    <section class="card space-y-4" aria-labelledby="theme-colors-title">
+      <div class="card-title" id="theme-colors-title">{{ icon('sparkles', 'h-4 w-4') }} {{ _("Palette de couleurs") }}</div>
+      <form method="post" action="/admin/theme/colors" class="space-y-4" id="theme-colors-form">{{ ui.csrf() }}
+        <div class="grid gap-4 sm:grid-cols-2">
+          {% for f in color_fields %}
+          <div class="flex items-start gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+            <input type="color" name="{{ f.name }}" id="color-{{ f.name }}" value="{{ f.value }}" x-model="colors.{{ f.name }}"
+                   class="h-11 w-14 shrink-0 cursor-pointer rounded border border-slate-300 bg-transparent p-0.5 dark:border-slate-700"
+                   aria-describedby="help-{{ f.name }}">
+            <div class="min-w-0 flex-1 space-y-1">
+              <label for="color-{{ f.name }}" class="block text-sm font-medium">{{ f.label|tr }}</label>
+              <div class="flex items-center gap-2">
+                <input type="text" class="input w-28 font-mono uppercase" dir="ltr" maxlength="7" spellcheck="false" autocomplete="off"
+                       value="{{ f.value }}" :value="colors.{{ f.name }}" @input="setHex('{{ f.name }}', $event.target.value)"
+                       @blur="$event.target.value = colors.{{ f.name }}" aria-label="{{ _('Code hexadécimal') }} – {{ f.label|tr }}" data-hex-for="{{ f.name }}">
+                <button type="button" class="btn-ghost btn-sm" x-show="colors.{{ f.name }} !== defaults.{{ f.name }}" x-cloak
+                        @click="colors.{{ f.name }} = defaults.{{ f.name }}" title="{{ _('Valeur par défaut') }} : {{ f.default }}">{{ _("Défaut") }}</button>
+              </div>
+              <p class="help" id="help-{{ f.name }}">{{ f.help|tr }}</p>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <p class="flash-warning" x-show="cardTooDark" x-cloak>{{ icon('alert', 'h-5 w-5 shrink-0') }}<span>{{ _("La couleur des cartes doit rester claire pour garantir la lisibilité du texte.") }}</span></p>
+        <p class="flash-warning" x-show="primaryTooLight" x-cloak>{{ icon('alert', 'h-5 w-5 shrink-0') }}<span>{{ _("Couleur primaire très claire : le texte des boutons passe en foncé et les liens sont assombris automatiquement pour rester lisibles.") }}</span></p>
+        <div class="space-y-1">
+          <div class="text-xs font-medium text-slate-500 dark:text-slate-400">{{ _("Nuances calculées (50 à 950)") }}</div>
+          <div class="flex flex-wrap gap-1" dir="ltr">
+            {% for shade, color in preview.brand.items() %}
+              <span class="h-6 w-8 rounded ring-1 ring-black/5" style="background: {{ color }}" :style="'background:' + shades.brand[{{ shade }}]" title="{{ shade }}"></span>
+            {% endfor %}
+          </div>
+          <div class="flex flex-wrap gap-1" dir="ltr">
+            {% for shade, color in preview.accent.items() %}
+              <span class="h-6 w-8 rounded ring-1 ring-black/5" style="background: {{ color }}" :style="'background:' + shades.accent[{{ shade }}]" title="{{ shade }}"></span>
+            {% endfor %}
+          </div>
+          <p class="help"><span>{{ _("Contraste du texte sur la couleur primaire") }}</span> : <span dir="ltr" x-text="primaryContrast"></span></p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <button class="btn-primary" type="submit" :disabled="cardTooDark">{{ icon('check', 'h-4 w-4') }} {{ _("Enregistrer les couleurs") }}</button>
+          <button class="btn-secondary" type="button" @click="revertColors()" x-show="colorsChanged" x-cloak>{{ _("Annuler les modifications") }}</button>
+          <span class="text-xs font-medium text-amber-700 dark:text-amber-400" x-show="colorsChanged" x-cloak>{{ _("Modifications non enregistrées : visibles uniquement dans l'aperçu.") }}</span>
+        </div>
+      </form>
+      <form method="post" action="/admin/theme/reset" data-confirm="{{ _('Réinitialiser les couleurs par défaut ? Les logos et les documents ne sont pas modifiés.') }}"
+            class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 dark:border-slate-800">{{ ui.csrf() }}
+        <span class="text-sm text-slate-600 dark:text-slate-400">{{ _("Rétablit la palette d'origine sans modifier les logos ni les documents.") }}</span>
+        <button class="btn-secondary" type="submit">{{ icon('swap', 'h-4 w-4') }} {{ _("Réinitialiser les couleurs par défaut") }}</button>
+      </form>
+    </section>
+
+    {# ------------------------------------------------------------------ typographie #}
+    <form method="post" action="/admin/theme/typography" class="card space-y-4" aria-labelledby="theme-typo-title">{{ ui.csrf() }}
+      <div class="card-title" id="theme-typo-title">{{ icon('document', 'h-4 w-4') }} {{ _("Typographie et mise en page") }}</div>
+      <fieldset class="space-y-2">
+        <legend class="label">{{ _("Police de l'interface") }}</legend>
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {% for key, label in fonts.items() %}
+          <label class="flex cursor-pointer flex-col gap-1 rounded-lg border p-3 transition"
+                 :class="font === '{{ key }}' ? 'border-brand-500 ring-2 ring-brand-500/30' : 'border-slate-200 dark:border-slate-800'">
+            <span class="flex items-center gap-2 text-sm font-medium">
+              <input type="radio" name="font_family" value="{{ key }}" x-model="font" {{ 'checked' if theme.font_family == key }} class="h-4 w-4 text-brand-600">
+              {{ label|tr }}
+            </span>
+            <span class="text-lg" style="font-family: {{ theme_tokens.fonts[key].stack }}">Aa Bb 123</span>
+            <span class="ar text-base" dir="rtl" lang="ar" style="font-family: {{ theme_tokens.fonts[key].rtl }}">فندق عنابة</span>
+            {% if key == 'tajawal' %}<span class="badge-teal self-start">{{ _("Recommandée pour l'arabe") }}</span>{% endif %}
+          </label>
+          {% endfor %}
+        </div>
+        <p class="help">{{ _("Aucune police n'est téléchargée depuis Internet : à défaut de fichier local, la police du système la plus proche est utilisée.") }}</p>
+      </fieldset>
+      <fieldset class="space-y-2">
+        <legend class="label">{{ _("Densité de l'interface") }}</legend>
+        <div class="grid gap-3 sm:grid-cols-2">
+          {% for key, label in densities.items() %}
+          <label class="flex cursor-pointer items-start gap-2 rounded-lg border p-3 transition"
+                 :class="density === '{{ key }}' ? 'border-brand-500 ring-2 ring-brand-500/30' : 'border-slate-200 dark:border-slate-800'">
+            <input type="radio" name="density" value="{{ key }}" x-model="density" {{ 'checked' if theme.density == key }} class="mt-0.5 h-4 w-4 text-brand-600">
+            <span><span class="block text-sm font-medium">{{ label|tr }}</span>
+              <span class="help">{% if key == 'compact' %}{{ _("Marges réduites : plus d'informations à l'écran (postes de réception, petits écrans).") }}{% else %}{{ _("Espacements généreux, lecture confortable (écrans tactiles).") }}{% endif %}</span></span>
+          </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+      <button class="btn-primary" type="submit">{{ icon('check', 'h-4 w-4') }} {{ _("Enregistrer la typographie") }}</button>
+    </form>
+
+    {# ------------------------------------------------------------------ documents #}
+    <form method="post" action="/admin/theme/documents" id="theme-documents-form" class="card space-y-4" aria-labelledby="theme-docs-title">{{ ui.csrf() }}
+      <div class="card-title" id="theme-docs-title">{{ icon('printer', 'h-4 w-4') }} {{ _("Documents émis") }}</div>
+      <p class="help">{{ _("Factures A4, fiches de police et tickets de caisse : logo, mentions légales, en-tête et pied de page. En arabe, les documents sont composés de droite à gauche.") }}</p>
+      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {% for f in legal_fields %}
+        <label class="block"><span class="label">{{ f.label|tr }}</span>
+          <input class="input" name="{{ f.name }}" value="{{ f.value }}" dir="ltr" maxlength="40" x-model="legal.{{ f.name }}"></label>
+        {% endfor %}
+      </div>
+      <label class="block"><span class="label">{{ _("En-tête des documents") }}</span>
+        <textarea class="input" name="document_header" rows="2" maxlength="1000" dir="auto" x-model="docs.header">{{ theme.document_header }}</textarea></label>
+      <label class="block"><span class="label">{{ _("Pied de page des documents") }}</span>
+        <textarea class="input" name="document_footer" rows="2" maxlength="1000" dir="auto" x-model="docs.footer">{{ theme.document_footer }}</textarea></label>
+      <label class="flex items-center gap-2 text-sm"><input class="checkbox" type="checkbox" name="show_logo_on_documents" value="1" x-model="docs.logo" {{ 'checked' if theme.show_logo_on_documents }}> {{ _("Afficher le logo sur les factures, fiches de police et tickets") }}</label>
+      <button class="btn-primary" type="submit">{{ icon('check', 'h-4 w-4') }} {{ _("Enregistrer l'identité et les documents") }}</button>
+    </form>
+  </div>
+
+  {# ==================================================================== aperçu en direct #}
+  <aside class="card space-y-3 xl:sticky xl:top-20" aria-labelledby="theme-preview-title" data-theme-preview>
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <div class="card-title mb-0" id="theme-preview-title">{{ icon('search', 'h-4 w-4') }} {{ _("Aperçu en direct") }}</div>
+      <div class="flex flex-wrap gap-1" role="group" aria-label="{{ _('Options de l\'aperçu') }}">
+        <button type="button" class="btn-sm" :class="pvDark ? 'btn-primary' : 'btn-secondary'" @click="pvDark = !pvDark" :aria-pressed="pvDark.toString()">
+          <span class="inline-flex items-center gap-1" x-show="!pvDark">{{ icon('moon', 'h-4 w-4') }} {{ _("Mode sombre") }}</span><span class="inline-flex items-center gap-1" x-show="pvDark" x-cloak>{{ icon('sun', 'h-4 w-4') }} {{ _("Mode clair") }}</span>
+        </button>
+        <button type="button" class="btn-sm" :class="pvRtl ? 'btn-primary' : 'btn-secondary'" @click="pvRtl = !pvRtl" :aria-pressed="pvRtl.toString()">
+          <span x-text="pvRtl ? 'RTL ← العربية' : 'LTR → Français'">{{ 'RTL' if rtl else 'LTR' }}</span>
+        </button>
+      </div>
+    </div>
+    <div class="flex gap-1 text-xs" role="tablist">
+      <button type="button" role="tab" class="btn-sm" :class="pvTab === 'ui' ? 'btn-primary' : 'btn-ghost'" @click="pvTab = 'ui'" :aria-selected="(pvTab === 'ui').toString()">{{ _("Interface") }}</button>
+      <button type="button" role="tab" class="btn-sm" :class="pvTab === 'doc' ? 'btn-primary' : 'btn-ghost'" @click="pvTab = 'doc'" :aria-selected="(pvTab === 'doc').toString()">{{ _("Document") }}</button>
+    </div>
+
+    <div class="theme-preview" :class="{ 'pv-dark': pvDark, 'pv-compact': density === 'compact' }" :dir="pvRtl ? 'rtl' : 'ltr'" :style="previewStyle" dir="{{ dir }}">
+      {# Onglet de navigateur : favicon et nom #}
+      <div class="pv-tabbar">
+        <span class="pv-tab">
+          <img :src="logoOf('favicon') || '/static/img/favicon.svg'" src="{{ branding.favicon or '/static/img/favicon.svg' }}" alt="" class="h-4 w-4 object-contain">
+          <span class="truncate" x-text="displayName">{{ hs.hotel_name }}</span>
+        </span>
+      </div>
+
+      {# --- interface --- #}
+      <div class="pv-shell" x-show="pvTab === 'ui'">
+        <div class="pv-sidebar">
+          <div class="pv-sidebar-brand">
+            <img :src="sidebarLogo" src="{{ branding.logo_dark or '/static/img/favicon.svg' }}" alt="{{ _("Logo de l'établissement") }}" class="h-7 w-auto max-w-[5.5rem] object-contain">
+          </div>
+          <div class="pv-sidebar-name" x-text="displayName">{{ hs.hotel_name }}</div>
+          <div class="pv-sidebar-tagline" x-show="displayTagline" x-text="displayTagline"></div>
+          <div class="pv-nav pv-nav-active"><span x-text="sample('dashboard')">{{ sample.dashboard }}</span></div>
+          <div class="pv-nav"><span x-text="sample('planning')">{{ sample.planning }}</span></div>
+          <div class="pv-nav"><span x-text="sample('bookings')">{{ sample.bookings }}</span></div>
+        </div>
+        <div class="pv-main">
+          <div class="pv-topbar">
+            <img x-show="headerLogo" :src="headerLogo" alt="" class="h-5 w-auto max-w-[6rem] object-contain">
+            <span class="pv-muted" x-text="sample('search')">{{ sample.search }}</span>
+          </div>
+          <div class="pv-card">
+            <div class="pv-title" x-text="sample('room')">{{ sample.room }}</div>
+            <p class="pv-text" x-text="sample('text')">{{ sample.text }}</p>
+            <span class="pv-link" x-text="sample('link')">{{ sample.link }}</span>
+            <div class="pv-actions">
+              <span class="pv-btn pv-btn-primary" x-text="sample('checkin')">{{ sample.checkin }}</span>
+              <span class="pv-btn pv-btn-accent" x-text="sample('print')">{{ sample.print }}</span>
+              <span class="pv-btn pv-btn-secondary" x-text="sample('cancel')">{{ sample.cancel }}</span>
+            </div>
+            <div class="pv-input" x-text="sample('guest')">{{ sample.guest }}</div>
+          </div>
+          <div class="pv-rooms">
+            {% for status in ['available', 'occupied', 'dirty', 'maintenance'] %}
+            <div class="pv-room pv-room-{{ status }}">
+              <div class="pv-room-number">{{ 101 + loop.index0 }}</div>
+              <span class="pv-badge pv-badge-{{ status }}" x-text="sample('{{ status }}')">{{ sample[status] }}</span>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      {# --- document (en-tête de facture / fiche de police) --- #}
+      <div class="pv-doc" x-show="pvTab === 'doc'" x-cloak>
+        <div class="pv-doc-head">
+          <img x-show="docs.logo && docLogo" :src="docLogo" alt="{{ _("Logo de l'établissement") }}" class="h-10 w-auto max-w-[7rem] object-contain">
+          <div class="min-w-0 flex-1">
+            <div class="pv-doc-name" x-text="displayName">{{ hs.hotel_name }}</div>
+            <div class="pv-doc-tagline" x-show="displayTagline" x-text="displayTagline"></div>
+            <div class="pv-doc-legal" dir="ltr"><template x-for="item in legalLines" :key="item"><span x-text="item"></span></template></div>
+          </div>
+        </div>
+        <div class="pv-doc-header" x-show="docs.header" x-text="docs.header"></div>
+        <div class="pv-doc-title" x-text="sample('invoice')">{{ sample.invoice }}</div>
+        <div class="pv-doc-lines"><span></span><span></span><span></span></div>
+        <div class="pv-doc-footer" x-show="docs.footer" x-text="docs.footer"></div>
+        <p class="pv-doc-note" x-show="docs.logo && pendingSvgLogo" x-cloak>{{ _("Pour les PDF, téléversez un logo PNG, WEBP ou JPEG.") }}</p>
+      </div>
+    </div>
+    <p class="help">{{ _("L'aperçu applique les valeurs saisies sans les enregistrer ; chaque section possède son propre bouton d'enregistrement.") }}</p>
+  </aside>
+</div>
+{% endblock %}

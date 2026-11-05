@@ -194,7 +194,7 @@ app/
   templates/                gabarit principal, écrans par module, macros d'interface
   static/                   css/app.css (Tailwind compilé), js/, vendor/ (Alpine, Chart.js), fonts/ (DejaVu)
 scripts/                    seed_prod.py, backup.py, install.bat / run.bat, install.sh / run.sh
-tests/                      196 tests – couverture 95 %
+tests/                      311 tests – couverture 95 %
 ```
 
 ---
@@ -333,3 +333,24 @@ python scripts/google_drive_auth.py --credentials credentials.json --out token.j
 - **Documents** : fiche de police, factures A4, ticket 80 mm, additions et rapport de clôture s'impriment au choix
   en bilingue FR/AR (défaut), français, arabe ou anglais (`?lang=bi|fr|ar|en`). Les tickets envoyés directement
   aux imprimantes thermiques existent en français et en anglais (ces imprimantes n'ont pas de police arabe).
+
+---
+
+## 12. Thème et marque (white-label)
+
+**Administration > Thème et marque** (`/admin/theme`) :
+- **Identité** : logo principal, logo pour le mode sombre et favicon (PNG, WEBP, JPEG ou SVG assaini, 2 Mo max),
+  redimensionnés automatiquement par Pillow ; slogan en français et en arabe. Fichiers stockés dans
+  `data/media/branding/`, donc inclus dans les sauvegardes et restaurés avec elles.
+- **Couleurs** : primaire, secondaire, cartes et les quatre statuts de chambre (libre, occupée, à nettoyer,
+  maintenance), avec sélecteurs de couleur, **aperçu en direct** avant enregistrement (clair / sombre, gauche-à-droite /
+  droite-à-gauche) et bouton de réinitialisation.
+- **Typographie et densité** : Inter, Roboto, Tajawal (arabe) ou police du système ; affichage compact ou confortable.
+- **Documents** : en-tête et pied personnalisés, logo sur les fiches de police, factures A4, tickets PDF, additions et
+  rapports de clôture (côté droit en arabe), titres et filets dans la couleur primaire. Les tickets envoyés directement
+  aux imprimantes thermiques reprennent le slogan et le pied de page (pas de logo).
+
+La feuille `GET /static/css/theme-custom.css` est générée à la volée depuis la base (variables CSS `--brand-*`,
+`--accent-*`, statuts, police, densité) : la charte s'applique sans recompiler Tailwind. Le texte sur la couleur
+primaire passe automatiquement en blanc ou en foncé selon le contraste. Pour un logo SVG, téléversez aussi une version
+PNG si vous voulez le voir sur les PDF (aucun convertisseur SVG n'est installé).

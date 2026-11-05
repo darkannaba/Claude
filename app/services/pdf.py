@@ -15,6 +15,16 @@ Tous les libellés sont des textes sources français passés par ``t(texte, lang
 traductions vivent dans ``app/locales/<lang>/pdf.json``. Lorsqu'un même texte français porte, dans un document,
 une traduction différente de celle des écrans, la clé prend un suffixe de contexte (``"TVA|col"``) qui n'est
 jamais affiché : seule la partie avant ``|`` est le texte français.
+
+Charte de l'établissement (white-label) : chaque générateur accepte ``theme`` (``ThemeSettings`` ou ``None``).
+``None`` conserve strictement le rendu historique. Avec une charte :
+
+- logo raster (``theme_manager.logo_path_for_documents``) dans l'en-tête, mis à l'échelle sans déformation
+  (≈ 18 mm de haut en A4, 14 mm sur les tickets) : à gauche en fr / en / bi, à droite en arabe (colonnes en miroir) ;
+- slogan sous le nom de l'hôtel (``slogan_ar`` en arabe, les deux en bilingue) ;
+- couleur d'accent (titres, intertitres, filets) = couleur primaire de la charte, assombrie si elle est trop claire
+  pour rester lisible sur fond blanc (contraste < 3:1) ;
+- ``document_header`` sous l'en-tête et ``document_footer`` en pied de chaque page A4 (en fin de ticket).
 """
 from __future__ import annotations
 
@@ -30,15 +40,19 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import Image as PdfImage
 from reportlab.platypus import KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app.config import config
 from app.models.customer import GENDERS, ID_TYPES, ID_TYPES_AR
 from app.models.invoice import ITEM_KINDS, PAYMENT_METHODS
 from app.services.amount_words import amount_in_words
+from app.services import theme_manager
 from app.services.amount_words_en import amount_in_words_en
+from app.services.common import BusinessError
 from app.services.i18n import t
 from app.services.invoicing import InvoiceView
 from app.services.qr import qr_drawing
@@ -104,10 +118,65 @@ S = {
     "small_right": _style("small_right", 7.5, align=TA_RIGHT),
     "muted_right": _style("muted_right", 7.5, align=TA_RIGHT, color=colors.HexColor("#475569")),
     "h2_right": _style("h2_right", 10, True, TA_RIGHT, ACCENT),
+    # charte de l'établissement : slogan et textes libres d'en-tête / pied de document
+    "slogan": _style("slogan", 8.5, True, color=ACCENT),
+    "slogan_right": _style("slogan_right", 8.5, True, TA_RIGHT, ACCENT),
+    "doc_footer": _style("doc_footer", 7, align=TA_CENTER, color=colors.HexColor("#475569")),
 }
 # En mode arabe seul, les styles alignés à gauche deviennent alignés à droite.
 _RTL_STYLES = {"base": "ar_right", "small": "small_right", "muted": "muted_right", "bold": "right_bold",
-               "h2": "h2_right", "hotel": "hotel_ar"}
+               "h2": "h2_right", "hotel": "hotel_ar", "slogan": "slogan_right"}
+# Styles dont la couleur suit la couleur primaire de la charte.
+_ACCENT_STYLES = ("title", "title_ar", "h2", "h2_right", "slogan", "slogan_right")
+WHITE = "#ffffff"
+MIN_ACCENT_CONTRAST = 3.0  # titres en gras sur fond blanc : seuil WCAG des textes larges / en gras
+A4_LOGO_HEIGHT = 18 * mm
+A4_LOGO_MAX_WIDTH = 45 * mm
+TICKET_LOGO_HEIGHT = 14 * mm
+TICKET_LOGO_MAX_WIDTH = 50 * mm
+A4_BOTTOM_MARGIN = 12 * mm
+# Hauteur maximale du pied de document de la charte : au-delà, il est réduit à l'échelle (jamais de page sans
+# zone utile, quelle que soit la longueur du texte enregistré).
+A4_FOOTER_MAX_HEIGHT = 40 * mm
+
+
+def accent_hex(theme) -> str:
+    """Couleur d'accent des documents (« #rrggbb ») : la couleur primaire de la charte, remplacée par sa nuance
+    700 lorsqu'elle est trop claire pour être lisible sur papier blanc ; teal historique sans charte."""
+    if theme is None:
+        return ACCENT.hexval().replace("0x", "#")
+    try:
+        primary = theme_manager.normalize_hex(theme.primary_color)
+    except BusinessError:
+        primary = theme_manager.DEFAULT_THEME["primary_color"]
+    if theme_manager.contrast_ratio(primary, WHITE) < MIN_ACCENT_CONTRAST:
+        return theme_manager.palette(primary)[700]
+    return primary
+
+
+def _themed_styles(accent) -> dict[str, ParagraphStyle]:
+    """Copie des styles dont les titres, intertitres et slogans prennent la couleur d'accent de la charte."""
+    styles = dict(S)
+    for name in _ACCENT_STYLES:
+        styles[name] = ParagraphStyle(f"{name}_theme", parent=S[name], textColor=accent)
+    return styles
+
+
+def _logo_source(theme) -> tuple[str, int, int] | None:
+    """(chemin, largeur px, hauteur px) du logo raster des documents, ou None (absent, désactivé, SVG sans rendu
+    PNG, fichier illisible)."""
+    if theme is None:
+        return None
+    path = theme_manager.logo_path_for_documents(theme)
+    if path is None:
+        return None
+    try:
+        width, height = ImageReader(str(path)).getSize()
+    except Exception:  # fichier supprimé ou corrompu entre deux requêtes : le document reste imprimable
+        return None
+    if width <= 0 or height <= 0:
+        return None
+    return str(path), int(width), int(height)
 
 
 def _source(text: str) -> str:
@@ -145,10 +214,53 @@ def _mirror_commands(extra, ncols: int) -> list:
 class _Doc:
     """Contexte de rendu d'un document : langue, traduction des libellés, styles et tableaux adaptés."""
 
-    def __init__(self, lang: str):
+    def __init__(self, lang: str, theme=None):
         self.lang = doc_lang(lang)
         self.rtl = self.lang == "ar"
         self.bilingual = self.lang == "bi"
+        self.theme = theme
+        if theme is None:
+            self.accent = ACCENT
+            self.S = S
+        else:
+            self.accent = colors.HexColor(accent_hex(theme))
+            self.S = _themed_styles(self.accent)
+        self._logo = _logo_source(theme)
+
+    # ---- charte de l'établissement
+    def _theme_text(self, field: str) -> str:
+        return str(getattr(self.theme, field, "") or "").strip() if self.theme is not None else ""
+
+    @property
+    def has_logo(self) -> bool:
+        return self._logo is not None
+
+    def logo(self, max_height: float, max_width: float, align: str = "CENTER") -> PdfImage | None:
+        """Logo de l'hôtel réduit pour tenir dans ``max_width`` × ``max_height`` (ratio conservé)."""
+        if self._logo is None:
+            return None
+        path, px_width, px_height = self._logo
+        scale = min(max_height / px_height, max_width / px_width)
+        image = PdfImage(path, width=px_width * scale, height=px_height * scale)
+        image.hAlign = align
+        return image
+
+    def slogan(self) -> str:
+        """Slogan dans la langue du document (variante arabe en mode ar, repli sur le slogan latin)."""
+        if self.rtl:
+            return self._theme_text("slogan_ar") or self._theme_text("slogan")
+        return self._theme_text("slogan")
+
+    def slogan_ar(self) -> str:
+        return self._theme_text("slogan_ar")
+
+    @property
+    def header_text(self) -> str:
+        return self._theme_text("document_header")
+
+    @property
+    def footer_text(self) -> str:
+        return self._theme_text("document_footer")
 
     # ---- libellés
     def t(self, text: str, **fmt) -> str:
@@ -192,7 +304,7 @@ class _Doc:
     def style(self, style: str | ParagraphStyle) -> ParagraphStyle:
         if not isinstance(style, str):
             return style
-        return S[_RTL_STYLES.get(style, style)] if self.rtl else S[style]
+        return self.S[_RTL_STYLES.get(style, style)] if self.rtl else self.S[style]
 
     def P(self, text, style: str | ParagraphStyle = "base") -> Paragraph:
         """Paragraphe de valeur (texte brut, chaque ligne mise en forme si elle contient de l'arabe)."""
@@ -219,8 +331,8 @@ class _Doc:
             fr = fr.format(**fmt)
             ar = ar.format(**fmt)
         if ar == text or ar == fr:
-            return Paragraph(escape(fr), S[style])
-        return Paragraph(f"{escape(fr)} <font size='7.5' color='#475569'>/ {escape(shape(ar))}</font>", S[style])
+            return Paragraph(escape(fr), self.S[style])
+        return Paragraph(f"{escape(fr)} <font size='7.5' color='#475569'>/ {escape(shape(ar))}</font>", self.S[style])
 
     def titles(self, fr: str, ar: str, style: str = "title", style_ar: str = "title_ar") -> list:
         """Titre de document : français + arabe en bilingue, arabe seul en ar, traduction (ou texte) sinon."""
@@ -256,13 +368,18 @@ def _hotel_header(doc: _Doc, hs: HotelSettings, width: float, qr_data: str | Non
         block = [doc.P(hs.hotel_name_ar or hs.hotel_name, "hotel"), doc.P(hs.hotel_address_ar or hs.hotel_address, "small")]
     else:
         block = [doc.P(hs.hotel_name, "hotel"), doc.P(hs.hotel_address, "small")]
+    slogan = doc.slogan()
+    if slogan:
+        block.insert(1, doc.P(slogan, "slogan"))
     if legal:
         block.append(doc.P(legal, "muted"))
     if contact:
         block.append(doc.P(contact, "muted"))
-    extra = [("VALIGN", (0, 0), (-1, -1), "TOP"), ("LINEBELOW", (0, 0), (-1, 0), 1, ACCENT)]
+    extra = [("VALIGN", (0, 0), (-1, -1), "TOP"), ("LINEBELOW", (0, 0), (-1, 0), 1, doc.accent)]
     if doc.bilingual:
         right = [doc.P(hs.hotel_name_ar, "hotel_ar"), doc.P(hs.hotel_address_ar, "ar_right")]
+        if doc.slogan_ar():
+            right.insert(1, doc.P(doc.slogan_ar(), "slogan_right"))
         cells = [block, right]
         widths = [width * 0.5, width * 0.5]
         if qr_data:
@@ -276,7 +393,127 @@ def _hotel_header(doc: _Doc, hs: HotelSettings, width: float, qr_data: str | Non
             cells.append(qr_drawing(qr_data, 22 * mm))
             widths = [width * 0.82, width * 0.18]
             extra.append(("ALIGN", (-1, 0), (-1, 0), "LEFT" if doc.rtl else "RIGHT"))
+    # Logo de la charte : première colonne logique (à gauche en fr / en / bi ; doc.table la place à droite en
+    # arabe). La colonne du logo est prélevée sur les colonnes de texte, la colonne du QR code garde sa largeur.
+    logo = doc.logo(A4_LOGO_HEIGHT, A4_LOGO_MAX_WIDTH, "RIGHT" if doc.rtl else "LEFT")
+    if logo is not None:
+        logo_width = logo.drawWidth + 6 * mm
+        text_columns = len(widths) - (1 if qr_data else 0)
+        text_width = sum(widths[:text_columns])
+        ratio = (text_width - logo_width) / text_width
+        widths = [logo_width] + [w * ratio for w in widths[:text_columns]] + widths[text_columns:]
+        cells = [logo] + cells
+        extra.append(("ALIGN", (0, 0), (0, 0), "RIGHT" if doc.rtl else "LEFT"))
     return doc.table([cells], widths, grid=False, extra=extra)
+
+
+def _header_flowables(doc: _Doc, hs: HotelSettings, width: float, qr_data: str | None = None) -> list:
+    """En-tête A4 complet : bloc de l'hôtel puis texte libre d'en-tête de la charte (s'il est renseigné)."""
+    flowables = [_hotel_header(doc, hs, width, qr_data)]
+    if doc.header_text:
+        flowables += [Spacer(1, 2 * mm), doc.P(doc.header_text, "small")]
+    return flowables
+
+
+def _page_decorator(doc: _Doc, width: float, left_margin: float):
+    """(callback de page, marge basse) : pied de document de la charte dessiné au bas de chaque page A4.
+
+    Sans pied personnalisé, aucun callback et marge basse historique (pagination inchangée).
+    """
+    text = doc.footer_text
+    if not text:
+        return None, A4_BOTTOM_MARGIN
+
+    def layout() -> tuple[Paragraph, float, float]:
+        """(paragraphe mis en page, échelle, hauteur dessinée). Trop haut, le pied est réduit à l'échelle : il
+        est recomposé sur une largeur élargie de 1/échelle puis dessiné réduit, jusqu'à tenir dans le plafond."""
+        footer = doc.P(text, "doc_footer")
+        _, natural = footer.wrap(width, A4[1])
+        scale = 1.0
+        for _ in range(40):
+            if natural * scale <= A4_FOOTER_MAX_HEIGHT:
+                break
+            scale *= 0.97 * A4_FOOTER_MAX_HEIGHT / (natural * scale)
+            footer = doc.P(text, "doc_footer")
+            _, natural = footer.wrap(width / scale, 1e6)
+        return footer, scale, min(natural * scale, A4_FOOTER_MAX_HEIGHT)
+
+    _, _, height = layout()
+    gap = 2.5 * mm
+
+    def draw(canvas, _document) -> None:
+        canvas.saveState()
+        footer, scale, _ = layout()
+        canvas.translate(left_margin, A4_BOTTOM_MARGIN)
+        canvas.scale(scale, scale)
+        footer.drawOn(canvas, 0, 0)
+        canvas.restoreState()
+        canvas.saveState()
+        canvas.setStrokeColor(doc.accent)
+        canvas.setLineWidth(0.6)
+        line_y = A4_BOTTOM_MARGIN + height + gap / 2
+        canvas.line(left_margin, line_y, left_margin + width, line_y)
+        canvas.restoreState()
+
+    return draw, A4_BOTTOM_MARGIN + height + gap
+
+
+def _build(pdf: SimpleDocTemplate, story: list, decorator) -> None:
+    if decorator is None:
+        pdf.build(story)
+    else:
+        pdf.build(story, onFirstPage=decorator, onLaterPages=decorator)
+
+
+def _ticket_branding_top(doc: _Doc, center: ParagraphStyle) -> list:
+    """Haut de ticket 80 mm : logo centré (avant le nom de l'hôtel)."""
+    logo = doc.logo(TICKET_LOGO_HEIGHT, TICKET_LOGO_MAX_WIDTH, "CENTER")
+    return [logo, Spacer(1, 1.5 * mm)] if logo is not None else []
+
+
+def _ticket_slogan(doc: _Doc) -> list:
+    """Slogan(s) centrés sous le nom de l'hôtel sur un ticket (français et arabe en bilingue)."""
+    style = ParagraphStyle("ticket_slogan", parent=doc.S["slogan"], alignment=TA_CENTER, fontSize=7.5, leading=10)
+    out = []
+    if doc.slogan():
+        out.append(doc.P(doc.slogan(), style))
+    if doc.bilingual and doc.slogan_ar():
+        out.append(doc.P(doc.slogan_ar(), style))
+    return out
+
+
+def _ticket_text(doc: _Doc, text: str, style: ParagraphStyle) -> list:
+    return [Spacer(1, 1.5 * mm), doc.P(text, style)] if text else []
+
+
+def _ticket_branding(doc: _Doc, center: ParagraphStyle) -> dict[str, list]:
+    """Éléments de charte d'un ticket 80 mm : logo, slogan(s), texte d'en-tête et pied de document."""
+    return {"top": _ticket_branding_top(doc, center), "slogans": _ticket_slogan(doc),
+            "header": _ticket_text(doc, doc.header_text, center), "footer": _ticket_text(doc, doc.footer_text, center)}
+
+
+TICKET_MARGIN = 4 * mm
+FRAME_PADDING = 6  # marges internes (points) du cadre par défaut de SimpleDocTemplate
+
+
+def _ticket_height(story: list, width: float, estimate: float, theme) -> float:
+    """Hauteur du rouleau d'un ticket.
+
+    Le contenu (logo, slogans, textes libres, lignes bilingues) est réellement composé et mesuré pour que le
+    ticket tienne sur une seule page ; l'estimation historique sert de hauteur minimale.
+    """
+    inner_width = width - 2 * FRAME_PADDING
+    total = 0.0
+    for flowable in story:
+        _, height = flowable.wrap(inner_width, 10_000 * mm)
+        total += height + flowable.getSpaceBefore() + flowable.getSpaceAfter()
+    needed = total + 2 * TICKET_MARGIN + 2 * FRAME_PADDING + 6 * mm  # marge de sécurité (arrondis de composition)
+    return max(estimate, needed)
+
+
+def _ticket_document(buffer: BytesIO, height: float, title: str) -> SimpleDocTemplate:
+    return SimpleDocTemplate(buffer, pagesize=(80 * mm, height), leftMargin=TICKET_MARGIN, rightMargin=TICKET_MARGIN,
+                             topMargin=TICKET_MARGIN, bottomMargin=TICKET_MARGIN, title=title)
 
 
 def _signatures(doc: _Doc, width: float, left: str = "Signature du voyageur", right: str = "Visa de la réception") -> Table:
@@ -329,12 +566,13 @@ def _stay_block(doc: _Doc, res, width: float) -> Table:
                      extra=[("BACKGROUND", (0, 0), (0, -1), HEAD_BG), ("BACKGROUND", (2, 0), (2, -1), HEAD_BG)])
 
 
-def police_form_pdf(hs: HotelSettings, res, printed_at: datetime, lang: str = "bi") -> bytes:
-    doc = _Doc(lang)
+def police_form_pdf(hs: HotelSettings, res, printed_at: datetime, lang: str = "bi", theme=None) -> bytes:
+    doc = _Doc(lang, theme)
     buffer = BytesIO()
-    pdf = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=14 * mm, rightMargin=14 * mm, topMargin=12 * mm,
-                            bottomMargin=12 * mm, title=f"Fiche de police {res.code}", author=hs.hotel_name)
     width = A4[0] - 28 * mm
+    decorator, bottom = _page_decorator(doc, width, 14 * mm)
+    pdf = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=14 * mm, rightMargin=14 * mm, topMargin=12 * mm,
+                            bottomMargin=bottom, title=f"Fiche de police {res.code}", author=hs.hotel_name)
     guest = res.guest
     individual = [c for c in res.companions if c.id_number]
     persons = [(guest, True)] + [(c, False) for c in individual]
@@ -342,7 +580,7 @@ def police_form_pdf(hs: HotelSettings, res, printed_at: datetime, lang: str = "b
     for index, (person, is_guest) in enumerate(persons):
         if index:
             story.append(PageBreak())
-        story += [_hotel_header(doc, hs, width, res.code), Spacer(1, 4 * mm)]
+        story += [*_header_flowables(doc, hs, width, res.code), Spacer(1, 4 * mm)]
         story += doc.titles(hs.police_form_title, hs.police_form_title_ar)
         story += [
             Spacer(1, 1 * mm), doc.P(doc.legal(hs.police_form_notice), "muted"), Spacer(1, 4 * mm),
@@ -372,7 +610,7 @@ def police_form_pdf(hs: HotelSettings, res, printed_at: datetime, lang: str = "b
                           doc.L("Fait à {place}, le {date} à {time}", "small", place=hs.hotel_address.split(",")[0],
                                 date=f"{printed_at:%d/%m/%Y}", time=f"{printed_at:%H:%M}")]),
         ]
-    pdf.build(story)
+    _build(pdf, story, decorator)
     return buffer.getvalue()
 
 
@@ -393,8 +631,8 @@ def _totals_rows(doc: _Doc, view: InvoiceView, sym: str, small: bool = False) ->
     return rows
 
 
-def invoice_pdf(hs: HotelSettings, view: InvoiceView, fmt: str = "a4", lang: str = "bi") -> bytes:
-    return _ticket_invoice(hs, view, lang) if fmt == "ticket" else _a4_invoice(hs, view, lang)
+def invoice_pdf(hs: HotelSettings, view: InvoiceView, fmt: str = "a4", lang: str = "bi", theme=None) -> bytes:
+    return _ticket_invoice(hs, view, lang, theme) if fmt == "ticket" else _a4_invoice(hs, view, lang, theme)
 
 
 def _invoice_title(doc: _Doc, view: InvoiceView) -> str:
@@ -406,15 +644,16 @@ def _invoice_title(doc: _Doc, view: InvoiceView) -> str:
     return doc.dyn(view.title)
 
 
-def _a4_invoice(hs: HotelSettings, view: InvoiceView, lang: str) -> bytes:
-    doc = _Doc(lang)
+def _a4_invoice(hs: HotelSettings, view: InvoiceView, lang: str, theme=None) -> bytes:
+    doc = _Doc(lang, theme)
     buffer = BytesIO()
-    pdf = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=14 * mm, rightMargin=14 * mm, topMargin=12 * mm,
-                            bottomMargin=12 * mm, title=view.number, author=hs.hotel_name)
     width = A4[0] - 28 * mm
+    decorator, bottom = _page_decorator(doc, width, 14 * mm)
+    pdf = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=14 * mm, rightMargin=14 * mm, topMargin=12 * mm,
+                            bottomMargin=bottom, title=view.number, author=hs.hotel_name)
     sym = hs.currency_symbol
     res = view.reservation
-    story = [_hotel_header(doc, hs, width, view.number), Spacer(1, 5 * mm)]
+    story = [*_header_flowables(doc, hs, width, view.number), Spacer(1, 5 * mm)]
 
     if doc.bilingual:
         heading = [doc.P(view.title, "title"), doc.P(view.title_ar, "title_ar")]
@@ -467,23 +706,23 @@ def _a4_invoice(hs: HotelSettings, view: InvoiceView, lang: str) -> bytes:
         story += [Spacer(1, 3 * mm), doc.L("Document provisoire : les nuitées marquées « prévisionnel » ne sont pas encore "
                                            "clôturées et peuvent évoluer jusqu'au départ.", "muted")]
     story += [Spacer(1, 6 * mm), doc.P(doc.legal(hs.invoice_footer), "center")]
-    pdf.build(story)
+    _build(pdf, story, decorator)
     return buffer.getvalue()
 
 
-def _ticket_invoice(hs: HotelSettings, view: InvoiceView, lang: str) -> bytes:
-    doc = _Doc(lang)
+def _ticket_invoice(hs: HotelSettings, view: InvoiceView, lang: str, theme=None) -> bytes:
+    doc = _Doc(lang, theme)
     buffer = BytesIO()
-    height = max(120 * mm, (115 + 10 * len(view.lines) + 6 * len(view.payments)) * mm)
     width = 72 * mm
-    pdf = SimpleDocTemplate(buffer, pagesize=(80 * mm, height), leftMargin=4 * mm, rightMargin=4 * mm,
-                            topMargin=4 * mm, bottomMargin=4 * mm, title=view.number)
+    small_center = _style("tc", 7.5, align=TA_CENTER)
+    branding = _ticket_branding(doc, small_center)
+    estimate = max(120 * mm, (115 + 10 * len(view.lines) + 6 * len(view.payments)) * mm)
     sym = hs.currency_symbol
     res = view.reservation
-    small_center = _style("tc", 7.5, align=TA_CENTER)
-    story = _ticket_hotel_lines(doc, hs, small_center)
+    story = branding["top"] + _ticket_hotel_lines(doc, hs, small_center, branding["slogans"])
     if hs.hotel_nif:
         story.append(doc.P(f"NIF {hs.hotel_nif}", small_center))
+    story += branding["header"]
     story += [Spacer(1, 2 * mm), doc.P(_invoice_title(doc, view), _style("tt", 10, True, TA_CENTER)),
               doc.L("N° {number} – {date}", small_center, number=view.number, date=d(view.issued_at)), Spacer(1, 2 * mm),
               doc.L("Client : {name}", "small", name=view.customer_name),
@@ -497,39 +736,46 @@ def _ticket_invoice(hs: HotelSettings, view: InvoiceView, lang: str) -> bytes:
                         extra=[("LINEABOVE", (0, 0), (-1, 0), 0.5, colors.black)]), Spacer(1, 3 * mm),
               qr_drawing(res.code, 22 * mm), doc.P(res.code, small_center), Spacer(1, 2 * mm),
               doc.P(doc.legal(hs.invoice_footer), small_center)]
+    story += branding["footer"]
+    pdf = _ticket_document(buffer, _ticket_height(story, width, estimate, theme), view.number)
     pdf.build(story)
     return buffer.getvalue()
 
 
-def _ticket_hotel_lines(doc: _Doc, hs: HotelSettings, small_center: ParagraphStyle) -> list:
-    """En-tête d'un ticket 80 mm : nom de l'hôtel (français et/ou arabe selon la langue) et adresse."""
+def _ticket_hotel_lines(doc: _Doc, hs: HotelSettings, small_center: ParagraphStyle, slogans: list | None = None) -> list:
+    """En-tête d'un ticket 80 mm : nom de l'hôtel (français et/ou arabe selon la langue), slogan(s) de la charte
+    et adresse."""
     name_fr = _style("th", 11, True, TA_CENTER)
     name_ar = _style("tha", 10, True, TA_CENTER)
+    slogans = slogans or []
     if doc.bilingual:
-        return [doc.P(hs.hotel_name, name_fr), doc.P(hs.hotel_name_ar, name_ar), doc.P(hs.hotel_address, small_center)]
+        return [doc.P(hs.hotel_name, name_fr), doc.P(hs.hotel_name_ar, name_ar), *slogans,
+                doc.P(hs.hotel_address, small_center)]
     if doc.rtl:
-        return [doc.P(hs.hotel_name_ar or hs.hotel_name, name_fr), doc.P(hs.hotel_address_ar or hs.hotel_address, small_center)]
-    return [doc.P(hs.hotel_name, name_fr), doc.P(hs.hotel_address, small_center)]
+        return [doc.P(hs.hotel_name_ar or hs.hotel_name, name_fr), *slogans,
+                doc.P(hs.hotel_address_ar or hs.hotel_address, small_center)]
+    return [doc.P(hs.hotel_name, name_fr), *slogans, doc.P(hs.hotel_address, small_center)]
 
 
 # ======================================================================== Point de vente
-def pos_ticket_pdf(hs: HotelSettings, order, lang: str = "bi") -> bytes:
-    doc = _Doc(lang)
+def pos_ticket_pdf(hs: HotelSettings, order, lang: str = "bi", theme=None) -> bytes:
+    doc = _Doc(lang, theme)
     buffer = BytesIO()
-    height = max(110 * mm, (85 + len(order.lines) * 7) * mm)
     width = 72 * mm
-    pdf = SimpleDocTemplate(buffer, pagesize=(80 * mm, height), leftMargin=4 * mm, rightMargin=4 * mm,
-                            topMargin=4 * mm, bottomMargin=4 * mm, title=order.number)
-    sym = hs.currency_symbol
     center = _style("pc", 7.5, align=TA_CENTER)
+    branding = _ticket_branding(doc, center)
+    estimate = max(110 * mm, (85 + len(order.lines) * 7) * mm)
+    sym = hs.currency_symbol
     name_fr = _style("ph", 11, True, TA_CENTER)
     name_ar = _style("pha", 10, True, TA_CENTER)
+    story = list(branding["top"])
     if doc.bilingual:
-        story = [doc.P(hs.hotel_name, name_fr), doc.P(hs.hotel_name_ar, name_ar)]
+        story += [doc.P(hs.hotel_name, name_fr), doc.P(hs.hotel_name_ar, name_ar)]
     elif doc.rtl:
-        story = [doc.P(hs.hotel_name_ar or hs.hotel_name, name_fr)]
+        story += [doc.P(hs.hotel_name_ar or hs.hotel_name, name_fr)]
     else:
-        story = [doc.P(hs.hotel_name, name_fr)]
+        story += [doc.P(hs.hotel_name, name_fr)]
+    story += branding["slogans"] + branding["header"]
     story += [doc.P(doc.dyn(order.outlet_label), _style("po", 9, True, TA_CENTER)),
               doc.L("Addition {number} – {date}", center, number=order.number, date=f"{order.created_at:%d/%m/%Y %H:%M}")]
     if order.label:
@@ -547,21 +793,24 @@ def pos_ticket_pdf(hs: HotelSettings, order, lang: str = "bi") -> bytes:
         story.append(doc.L("Réglé : {method}", "small",
                            method=doc.dyn(PAYMENT_METHODS.get(order.payment_method, order.payment_method))))
     story += [Spacer(1, 2 * mm), qr_drawing(order.number, 18 * mm), doc.P(doc.legal(hs.invoice_footer), center)]
+    story += branding["footer"]
+    pdf = _ticket_document(buffer, _ticket_height(story, width, estimate, theme), order.number)
     pdf.build(story)
     return buffer.getvalue()
 
 
 # ======================================================================== Clôture journalière
-def daily_report_pdf(hs: HotelSettings, summary: dict, lang: str = "bi") -> bytes:
-    doc = _Doc(lang)
+def daily_report_pdf(hs: HotelSettings, summary: dict, lang: str = "bi", theme=None) -> bytes:
+    doc = _Doc(lang, theme)
     buffer = BytesIO()
-    pdf = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=14 * mm, rightMargin=14 * mm, topMargin=12 * mm,
-                            bottomMargin=12 * mm, title=f"Clôture {summary['day']}")
     width = A4[0] - 28 * mm
+    decorator, bottom = _page_decorator(doc, width, 14 * mm)
+    pdf = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=14 * mm, rightMargin=14 * mm, topMargin=12 * mm,
+                            bottomMargin=bottom, title=f"Clôture {summary['day']}")
     sym = hs.currency_symbol
     kpi = summary["kpi"]
     run = summary["run"]
-    story = [_hotel_header(doc, hs, width), Spacer(1, 5 * mm)]
+    story = [*_header_flowables(doc, hs, width), Spacer(1, 5 * mm)]
     title_key = "RAPPORT DE CLÔTURE JOURNALIÈRE"
     if doc.bilingual:
         story += [doc.P(f"{title_key} – {d(summary['day'])}", "title"), doc.P(t(title_key, "ar"), "title_ar")]
@@ -601,5 +850,5 @@ def daily_report_pdf(hs: HotelSettings, summary: dict, lang: str = "bi") -> byte
                         [width / 2, width / 2], grid=False, extra=[("VALIGN", (0, 0), (-1, -1), "TOP")]),
               Spacer(1, 10 * mm),
               _signatures(doc, width, "Réceptionniste de nuit", "Direction")]
-    pdf.build(story)
+    _build(pdf, story, decorator)
     return buffer.getvalue()

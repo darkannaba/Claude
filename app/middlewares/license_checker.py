@@ -1,4 +1,4 @@
-"""Contrôle de licence sur chaque requête (sauf connexion, activation, ressources statiques)."""
+"""Contrôle de licence sur chaque requête (sauf connexion, activation, ressources statiques et de marque)."""
 from __future__ import annotations
 
 from starlette.requests import Request
@@ -10,7 +10,8 @@ from app.database import SessionLocal
 from app.services import licensing
 from app.templating import render_error
 
-EXEMPT_PREFIXES = ("/static", "/login", "/logout", "/lang", "/activate", "/health", "/account/password")
+EXEMPT_PREFIXES = ("/static", "/login", "/logout", "/lang", "/activate", "/health", "/account/password",
+                   "/branding")
 
 
 def _exempt(path: str) -> bool:

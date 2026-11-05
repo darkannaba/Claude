@@ -9,6 +9,7 @@ from app.models.invoice import ITEM_KINDS, PAYMENT_KINDS, PAYMENT_METHODS, Folio
 from app.models.pos import OUTLETS, ORDER_STATUSES, STOCK_REASONS, PosItem, PosOrder, PosOrderLine, StockMovement
 from app.models.room import ROOM_STATUSES, RatePeriod, Room, RoomType
 from app.models.system import FeatureFlag, Setting
+from app.models.theme import BRANDING_KINDS, THEME_DENSITIES, THEME_FONTS, ThemeSettings
 from app.models.user import ROLES, User
 
 __all__ = [
@@ -19,6 +20,7 @@ __all__ = [
     "OUTLETS", "ORDER_STATUSES", "STOCK_REASONS", "PosItem", "PosOrder", "PosOrderLine", "StockMovement",
     "ROOM_STATUSES", "RatePeriod", "Room", "RoomType",
     "FeatureFlag", "Setting",
+    "BRANDING_KINDS", "THEME_DENSITIES", "THEME_FONTS", "ThemeSettings",
     "ROLES", "User",
     "LicenseInfo", "OTA_CHANNELS", "OTA_PERMISSIONS", "OtaApiKey", "OtaBooking", "OtaLog",
 ]

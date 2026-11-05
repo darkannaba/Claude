@@ -17,7 +17,7 @@ from app.models.customer import ID_TYPES, Company, Guest
 from app.models.invoice import Invoice
 from app.models.pos import PosItem, PosOrder
 from app.models.room import Room, RoomType
-from app.services import booking, crm, night_audit, pdf, printing, reports
+from app.services import booking, crm, night_audit, pdf, printing, reports, theme_manager
 from app.services.common import BusinessError, like_pattern, parse_date, to_date, to_int
 from app.services.folio import build_folio
 from app.services.invoicing import invoice_view
@@ -442,7 +442,9 @@ def _pdf(content: bytes, filename: str) -> Response:
 async def police_form(db: DbSession, user: StaffUser, res_id: int, lang: str = "bi"):
     res = await _reservation(db, res_id)
     hs = await load_hotel_settings(db)
-    return _pdf(pdf.police_form_pdf(hs, res, now_of(hs), lang=pdf.doc_lang(lang)), f"fiche-police-{res.code}.pdf")
+    theme = await theme_manager.get_theme(db)
+    return _pdf(pdf.police_form_pdf(hs, res, now_of(hs), lang=pdf.doc_lang(lang), theme=theme),
+                f"fiche-police-{res.code}.pdf")
 
 
 @router.get("/reservations/{res_id}/invoice.pdf")
@@ -453,7 +455,8 @@ async def invoice_document(db: DbSession, user: StaffUser, res_id: int, format: 
     hs = await load_hotel_settings(db)
     view = invoice_view(res, hs, await load_calendar(db, hs), now_of(hs))
     fmt = "ticket" if format == "ticket" else "a4"
-    return _pdf(pdf.invoice_pdf(hs, view, fmt, lang=pdf.doc_lang(lang)), f"{view.number}-{fmt}.pdf")
+    theme = await theme_manager.get_theme(db)
+    return _pdf(pdf.invoice_pdf(hs, view, fmt, lang=pdf.doc_lang(lang), theme=theme), f"{view.number}-{fmt}.pdf")
 
 
 @router.get("/reservations/{res_id}/qr.svg")
@@ -468,18 +471,20 @@ async def reservation_print(request: Request, db: DbSession, user: StaffUser, re
     hs = await load_hotel_settings(db)
     form = await request.form()
     lang = pdf.doc_lang(form.get("lang"), "fr")  # champ de formulaire lang : fr (défaut) | ar | en | bi
+    theme = await theme_manager.get_theme(db)
 
     async def action():
         if document == "ticket":
             view = invoice_view(res, hs, await load_calendar(db, hs), now_of(hs))
             await printing.print_raw(hs.thermal_printer_host, hs.thermal_printer_port,
-                                     printing.invoice_receipt(view, hs, lang=lang))
+                                     printing.invoice_receipt(view, hs, lang=lang, theme=theme))
         elif document == "invoice":
             view = invoice_view(res, hs, await load_calendar(db, hs), now_of(hs))
-            await printing.print_raw(hs.a4_printer_host, hs.a4_printer_port, pdf.invoice_pdf(hs, view, "a4", lang=lang))
+            await printing.print_raw(hs.a4_printer_host, hs.a4_printer_port,
+                                     pdf.invoice_pdf(hs, view, "a4", lang=lang, theme=theme))
         elif document == "police":
             await printing.print_raw(hs.a4_printer_host, hs.a4_printer_port,
-                                     pdf.police_form_pdf(hs, res, now_of(hs), lang=lang))
+                                     pdf.police_form_pdf(hs, res, now_of(hs), lang=lang, theme=theme))
         else:
             raise BusinessError("Document inconnu.")
 
@@ -554,7 +559,9 @@ async def night_audit_report(db: DbSession, user: StaffUser, day: str, lang: str
     if business_date is None:
         raise HTTPException(status_code=400, detail="Date invalide.")
     hs = await load_hotel_settings(db)
-    return _pdf(pdf.daily_report_pdf(hs, await reports.daily_summary(db, business_date), lang=pdf.doc_lang(lang)),
+    theme = await theme_manager.get_theme(db)
+    return _pdf(pdf.daily_report_pdf(hs, await reports.daily_summary(db, business_date), lang=pdf.doc_lang(lang),
+                                     theme=theme),
                 f"cloture-{day}.pdf")
 
 

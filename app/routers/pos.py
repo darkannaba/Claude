@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from app.deps import AdminUser, DbSession, StaffUser, attempt, redirect
 from app.models.booking import Reservation
 from app.models.pos import OUTLETS, PosItem, PosOrder, StockMovement
-from app.services import pdf, pos, printing
+from app.services import pdf, pos, printing, theme_manager
 from app.services.common import BusinessError, to_int
 from app.services.loaders import load_pos_order, load_reservation, load_reservations
 from app.services.settings import enabled_modules, load_hotel_settings, today_of
@@ -130,7 +130,8 @@ async def order_void(request: Request, db: DbSession, user: StaffUser, order_id:
 async def order_ticket(db: DbSession, user: StaffUser, order_id: int, lang: str = "bi"):
     order = await _order(db, order_id)
     hs = await load_hotel_settings(db)
-    return Response(pdf.pos_ticket_pdf(hs, order, lang=pdf.doc_lang(lang)), media_type="application/pdf",
+    theme = await theme_manager.get_theme(db)
+    return Response(pdf.pos_ticket_pdf(hs, order, lang=pdf.doc_lang(lang), theme=theme), media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{order.number}.pdf"'})
 
 
@@ -140,9 +141,11 @@ async def order_print(request: Request, db: DbSession, user: StaffUser, order_id
     hs = await load_hotel_settings(db)
     form = await request.form()
     lang = pdf.doc_lang(form.get("lang"), "fr")  # champ de formulaire lang : fr (défaut) | en (ar / bi ⇒ anglais)
+    theme = await theme_manager.get_theme(db)
 
     async def action():
-        await printing.print_raw(hs.thermal_printer_host, hs.thermal_printer_port, printing.pos_receipt(order, hs, lang=lang))
+        await printing.print_raw(hs.thermal_printer_host, hs.thermal_printer_port,
+                                 printing.pos_receipt(order, hs, lang=lang, theme=theme))
 
     await attempt(request, db, action, "Ticket envoyé à l'imprimante.")
     return redirect(f"/pos/orders/{order_id}")

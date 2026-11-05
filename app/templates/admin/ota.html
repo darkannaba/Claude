@@ -79,7 +79,7 @@
         <td><span class="badge-slate">{{ log.event }}</span></td><td class="font-mono text-xs">{{ log.external_ref }}</td>
         <td><span class="{{ 'badge-green' if log.http_status < 300 else ('badge-amber' if log.http_status < 500 else 'badge-red') }}">{{ log.http_status }}</span></td>
         <td>{% if log.reservation_id %}<a href="/reservations/{{ log.reservation_id }}">{{ _("n°") }} {{ log.reservation_id }}</a>{% endif %}</td>
-        <td class="max-w-md"><details><summary class="cursor-pointer text-xs text-brand-700 dark:text-brand-400">{{ _("Payload / réponse") }}</summary>
+        <td class="max-w-md"><details><summary class="cursor-pointer text-xs text-link">{{ _("Payload / réponse") }}</summary>
           <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded bg-slate-100 p-2 text-[11px] dark:bg-slate-800">{{ log.payload }}</pre>
           <pre class="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-slate-100 p-2 text-[11px] dark:bg-slate-800">{{ log.response }}</pre></details></td></tr>
     {% else %}
