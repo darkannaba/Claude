@@ -1,0 +1,196 @@
+{# Numérisation de la pièce d'identité : bouton + fenêtre (composant Alpine « idScanner » de app/static/js/app.js).
+   Variables : scan_context ('new' = nouvelle réservation, 'checkin' = réservation existante, 'guest' = fiche CRM),
+   scan_reservation (ou None), scan_guest (ou None), scan_button_class (facultatif).
+   La configuration et les libellés passent par un bloc JSON (la CSP interdit tout script en ligne) ; la fenêtre
+   est téléportée dans <body> pour rester hors du formulaire de réservation (aucun champ soumis par erreur). #}
+{% set scan_ns = namespace(types={}, genders={}) %}
+{% for k, l in ID_TYPES.items() %}{% set _ignored = scan_ns.types.update({k: l|tr}) %}{% endfor %}
+{% for k, l in GENDERS.items() %}{% set _ignored = scan_ns.genders.update({k: l|tr}) %}{% endfor %}
+{# Fiche existante (check-in : client de la réservation ; fiche CRM) : sert de base au formulaire de vérification. #}
+{% set scan_target = scan_guest or (scan_reservation.guest if scan_reservation else None) %}
+{% set scan_cfg = {
+  "context": scan_context,
+  "reservation_id": scan_reservation.id if scan_reservation else None,
+  "guest_id": scan_guest.id if scan_guest else None,
+  "today": today.isoformat(),
+  "guest_fields": ({
+    "last_name": scan_target.last_name, "first_name": scan_target.first_name,
+    "last_name_ar": scan_target.last_name_ar, "first_name_ar": scan_target.first_name_ar,
+    "birth_date": scan_target.birth_date.isoformat() if scan_target.birth_date else "",
+    "birth_place": scan_target.birth_place, "gender": scan_target.gender, "nationality": scan_target.nationality,
+    "id_type": scan_target.id_type, "id_number": scan_target.id_number,
+    "id_expiry_date": scan_target.id_expiry_date.isoformat() if scan_target.id_expiry_date else "",
+    "id_issue_date": scan_target.id_issue_date.isoformat() if scan_target.id_issue_date else "",
+    "id_issue_place": scan_target.id_issue_place,
+  } if scan_target else {}),
+  "id_types": scan_ns.types,
+  "genders": scan_ns.genders,
+  "messages": {
+    "camera_denied": _("Accès à la caméra refusé : autorisez-la dans le navigateur ou téléversez une photo de la pièce."),
+    "camera_insecure": _("La caméra exige une connexion sécurisée (HTTPS) ou l'adresse localhost : téléversez plutôt une photo."),
+    "camera_missing": _("Aucune caméra détectée sur cet appareil."),
+    "camera_error": _("Impossible de démarrer la caméra."),
+    "bad_type": _("Format non pris en charge : PNG, JPEG ou PDF uniquement."),
+    "too_big": _("Fichier trop volumineux : 8 Mo au maximum."),
+    "network": _("Erreur de communication avec le serveur : réessayez."),
+    "session": _("Session expirée ou accès refusé : rechargez la page."),
+    "empty": _("Scannez ou collez d'abord la MRZ de la pièce."),
+    "detected": _("Lecture de douchette détectée : analyse en cours…"),
+    "no_file": _("Choisissez un fichier ou prenez une photo."),
+    "applied_new": _("Client sélectionné pour la réservation."),
+    "recto": _("Recto"),
+    "verso": _("Verso"),
+  },
+} %}
+<script type="application/json" id="id-scan-config">{{ scan_cfg|tojson }}</script>
+<div x-data="idScanner" class="no-print">
+  <button type="button" class="{{ scan_button_class|default('btn-secondary btn-sm') }}" @click="open('mrz')" data-id-scan-open>
+    {{ icon('id', 'h-4 w-4') }} {{ _("Numériser la pièce d'identité") }}
+  </button>
+
+  <template x-teleport="body">
+    <div x-show="isOpen" x-cloak class="fixed inset-0 z-50 flex items-stretch justify-center bg-slate-900/60 sm:items-center sm:p-4"
+         role="dialog" aria-modal="true" aria-labelledby="id-scan-title" @keydown.escape.window="isOpen && close()">
+      <div class="card flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-none p-0 sm:max-h-[92vh] sm:rounded-xl">
+        <div class="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+          <h2 id="id-scan-title" class="flex items-center gap-2 text-base font-semibold">{{ icon('id', 'h-5 w-5') }} {{ _("Numériser la pièce d'identité") }}</h2>
+          <button type="button" class="btn-ghost btn-sm" @click="close()" aria-label="{{ _('Fermer') }}">{{ icon('x', 'h-5 w-5') }}</button>
+        </div>
+
+        <div class="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+          <div x-show="error" x-cloak class="flash-error">{{ icon('alert', 'h-5 w-5 shrink-0') }}<span x-text="error"></span></div>
+          <div x-show="info" x-cloak class="flash-info">{{ icon('id', 'h-5 w-5 shrink-0') }}<span x-text="info"></span></div>
+
+          {# ------------------------------------------------ étape 1 : capture #}
+          <div x-show="step === 'capture'" class="space-y-4">
+            <div class="flex flex-wrap gap-2" role="tablist">
+              <button type="button" role="tab" :aria-selected="tab === 'mrz'" :class="tab === 'mrz' ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'" @click="switchTab('mrz')">{{ icon('qr', 'h-4 w-4') }} {{ _("Douchette / MRZ") }}</button>
+              <button type="button" role="tab" :aria-selected="tab === 'photo'" :class="tab === 'photo' ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'" @click="switchTab('photo')">{{ icon('upload', 'h-4 w-4') }} {{ _("Photo ou fichier") }}</button>
+            </div>
+
+            <div x-show="tab === 'mrz'" class="space-y-3">
+              <p class="help">{{ _("Passez la pièce dans le lecteur MRZ ou scannez son code-barres : la saisie très rapide est détectée automatiquement, même hors du champ, tant que cette fenêtre est ouverte.") }}</p>
+              <label class="block"><span class="label">{{ _("Zone de lecture automatique (MRZ)") }}</span>
+                <textarea x-ref="capture" x-model="mrzText" class="input font-mono text-xs uppercase" rows="3" dir="ltr" spellcheck="false" autocomplete="off"
+                          placeholder="P&lt;DZABENALI&lt;&lt;MOHAMED&lt;&lt;&lt;…"></textarea></label>
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <span class="text-xs text-slate-500 dark:text-slate-400" x-show="!busy">{{ _("En attente de lecture…") }}</span>
+                <span class="text-xs text-slate-500 dark:text-slate-400" x-show="busy" x-cloak>{{ _("Analyse en cours…") }}</span>
+                <button type="button" class="btn-primary btn-sm" :disabled="busy" @click="analyseMrz(mrzText)">{{ icon('search', 'h-4 w-4') }} {{ _("Analyser") }}</button>
+              </div>
+            </div>
+
+            <div x-show="tab === 'photo'" x-cloak class="space-y-3">
+              <div x-show="status.loaded && !status.tesseract" class="flash-warning">{{ icon('alert', 'h-5 w-5 shrink-0') }}
+                <span>{{ _("Moteur OCR Tesseract non installé : le fichier est conservé, mais la lecture automatique de l'image est impossible. Utilisez la douchette MRZ ou saisissez les champs.") }}</span></div>
+              <div class="grid gap-3 sm:grid-cols-2">
+                <label class="block"><span class="label">{{ _("Face de la pièce") }}</span>
+                  <select class="input" x-model="side"><option value="recto">{{ _("Recto") }}</option><option value="verso">{{ _("Verso") }}</option></select></label>
+                <label class="block"><span class="label">{{ _("Fichier (PNG, JPG ou PDF – 8 Mo max.)") }}</span>
+                  <input class="input" type="file" accept="image/png,image/jpeg,application/pdf" x-ref="file" @change="pickFile($event)"></label>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button type="button" class="btn-secondary btn-sm" x-show="!camera.active" @click="startCamera()">{{ icon('id', 'h-4 w-4') }} {{ _("Utiliser la caméra") }}</button>
+                <button type="button" class="btn-primary btn-sm" x-show="camera.active" x-cloak @click="capturePhoto()">{{ icon('check', 'h-4 w-4') }} {{ _("Prendre la photo") }}</button>
+                <button type="button" class="btn-secondary btn-sm" x-show="camera.active" x-cloak @click="stopCamera()">{{ _("Arrêter la caméra") }}</button>
+              </div>
+              <p class="help">{{ _("Cadrez toute la pièce, à plat, sans reflet ; la bande MRZ (lignes de chevrons « < ») doit être nette.") }}</p>
+              <div x-show="camera.active" x-cloak class="overflow-hidden rounded-lg border border-slate-200 bg-black dark:border-slate-700">
+                <video x-ref="video" class="mx-auto max-h-72 w-full object-contain" autoplay playsinline muted></video>
+              </div>
+              <div x-show="previewUrl || fileName" x-cloak class="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                <template x-if="previewUrl && !previewIsPdf"><img :src="previewUrl" alt="{{ _('Aperçu de la pièce') }}" class="h-32 w-auto rounded object-contain"></template>
+                <template x-if="previewIsPdf"><span class="badge-slate">{{ icon('document', 'h-3 w-3') }} PDF</span></template>
+                <span class="min-w-0 flex-1 truncate text-sm" dir="auto" x-text="fileName"></span>
+                <button type="button" class="btn-primary btn-sm" :disabled="busy" @click="upload()">{{ icon('upload', 'h-4 w-4') }}
+                  <span x-show="!busy">{{ _("Envoyer et lire") }}</span><span x-show="busy" x-cloak>{{ _("Lecture en cours…") }}</span></button>
+              </div>
+            </div>
+          </div>
+
+          {# ------------------------------------------------ étape 2 : vérification #}
+          <div x-show="step === 'verify'" x-cloak class="space-y-4">
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+              <span class="badge-slate" x-show="result && result.format" x-text="formatLabel"></span>
+              <template x-if="result && Object.keys(result.checks || {}).length">
+                <span :class="result.checksums_valid ? 'badge-green' : 'badge-red'"
+                      x-text='result.checksums_valid ? {{ _("Sommes de contrôle valides")|tojson }} : {{ _("Sommes de contrôle invalides")|tojson }}'></span>
+              </template>
+              <span class="badge-red" x-show="expired" x-cloak>{{ _("Document expiré") }}</span>
+              <span class="badge-amber" x-show="result && result.status === 'failed'" x-cloak>{{ _("Lecture impossible : saisie manuelle") }}</span>
+            </div>
+            <p class="text-sm" x-show="result && result.message" x-text="result && result.message"></p>
+            <ul class="space-y-1" x-show="warnings.length" x-cloak>
+              <template x-for="w in warnings" :key="w"><li class="flash-warning py-2">{{ icon('alert', 'h-4 w-4 shrink-0') }}<span x-text="w"></span></li></template>
+            </ul>
+            <template x-if="result && Object.keys(result.checks || {}).length">
+              <div class="flex flex-wrap gap-1.5 text-xs">
+                <template x-for="(ok, key) in result.checks" :key="key">
+                  <span :class="ok ? 'badge-green' : 'badge-red'"><span x-text="ok ? '✓' : '✗'"></span> <span x-text="(result.check_labels || {})[key] || key"></span></span>
+                </template>
+              </div>
+            </template>
+
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" @keydown.enter.prevent>
+              <label class="block"><span class="label">{{ _("Nom") }} <span class="text-rose-500">*</span></span><input class="input" x-model="fields.last_name" dir="auto" autocomplete="off"></label>
+              <label class="block"><span class="label">{{ _("Prénom") }} <span class="text-rose-500">*</span></span><input class="input" x-model="fields.first_name" dir="auto" autocomplete="off"></label>
+              <label class="block"><span class="label">{{ _("Date de naissance") }}</span><input class="input" type="date" x-model="fields.birth_date"></label>
+              <label class="block"><span class="label">{{ _("Nom (arabe)") }}</span><input class="input" x-model="fields.last_name_ar" dir="rtl" autocomplete="off"></label>
+              <label class="block"><span class="label">{{ _("Prénom (arabe)") }}</span><input class="input" x-model="fields.first_name_ar" dir="rtl" autocomplete="off"></label>
+              <label class="block"><span class="label">{{ _("Lieu de naissance") }}</span><input class="input" x-model="fields.birth_place" dir="auto" autocomplete="off"></label>
+              <label class="block"><span class="label">{{ _("Sexe") }}</span>
+                <select class="input" x-model="fields.gender"><template x-for="(label, key) in cfg.genders" :key="key"><option :value="key" x-text="label" :selected="fields.gender === key"></option></template></select></label>
+              <label class="block"><span class="label">{{ _("Nationalité") }}</span><input class="input" x-model="fields.nationality" dir="auto" autocomplete="off"></label>
+              <label class="block"><span class="label">{{ _("Type de pièce") }}</span>
+                <select class="input" x-model="fields.id_type"><template x-for="(label, key) in cfg.id_types" :key="key"><option :value="key" x-text="label" :selected="fields.id_type === key"></option></template></select></label>
+              <label class="block"><span class="label">{{ _("N° de pièce") }} <span class="text-rose-500">*</span></span><input class="input font-mono" x-model="fields.id_number" dir="ltr" autocomplete="off"></label>
+              <label class="block"><span class="label">{{ _("Date d'expiration") }}</span><input class="input" type="date" x-model="fields.id_expiry_date" :class="expired ? 'border-rose-500' : ''"></label>
+              <label class="block"><span class="label">{{ _("Délivrée le") }}</span><input class="input" type="date" x-model="fields.id_issue_date"></label>
+              <label class="block sm:col-span-2 lg:col-span-1"><span class="label">{{ _("Délivrée à") }}</span><input class="input" x-model="fields.id_issue_place" dir="auto" autocomplete="off"></label>
+            </div>
+            <ul class="help space-y-0.5" x-show="notes.length" x-cloak><template x-for="n in notes" :key="n"><li x-text="'ℹ ' + n"></li></template></ul>
+
+            <div x-show="files.length" x-cloak class="flex flex-wrap gap-3">
+              <template x-for="f in files" :key="f.url">
+                <a :href="f.url" target="_blank" rel="noopener" class="block rounded-lg border border-slate-200 p-1 dark:border-slate-700">
+                  <template x-if="f.image"><img :src="f.url" alt="{{ _('Pièce numérisée') }}" class="h-24 w-auto rounded object-contain"></template>
+                  <template x-if="!f.image"><span class="badge-slate m-2">{{ icon('document', 'h-3 w-3') }} PDF</span></template>
+                  <span class="block text-center text-xs text-slate-500" x-text="f.sideLabel"></span>
+                </a>
+              </template>
+            </div>
+          </div>
+
+          {# ------------------------------------------------ étape 3 : terminé #}
+          <div x-show="step === 'done'" x-cloak class="space-y-4">
+            <div class="flash-success">{{ icon('check', 'h-5 w-5 shrink-0') }}<span x-text="applied && applied.message"></span></div>
+            <div class="flex flex-wrap gap-2">
+              <template x-if="applied && applied.police_url">
+                <a class="btn-primary btn-sm" :href="applied.police_url" target="_blank" rel="noopener">{{ icon('printer', 'h-4 w-4') }} {{ _("Fiche de police (PDF)") }}</a>
+              </template>
+              <template x-if="applied && applied.guest_url">
+                <a class="btn-secondary btn-sm" :href="applied.guest_url">{{ icon('users', 'h-4 w-4') }} {{ _("Ouvrir la fiche client") }}</a>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 px-4 py-3 dark:border-slate-800">
+          <template x-if="step === 'verify'">
+            <div class="flex flex-wrap gap-2">
+              <button type="button" class="btn-secondary btn-sm" @click="addOtherSide()">{{ _("Ajouter l'autre face") }}</button>
+              <button type="button" class="btn-secondary btn-sm" @click="restart()">{{ _("Recommencer") }}</button>
+              <button type="button" class="btn-primary btn-sm" :disabled="busy" @click="apply()">{{ icon('check', 'h-4 w-4') }} {{ _("Valider") }}</button>
+            </div>
+          </template>
+          <template x-if="step === 'capture'">
+            <button type="button" class="btn-ghost btn-sm" @click="manual()">{{ _("Saisie manuelle") }}</button>
+          </template>
+          <template x-if="step === 'done'">
+            <button type="button" class="btn-primary btn-sm" @click="finish()">{{ _("Fermer") }}</button>
+          </template>
+        </div>
+      </div>
+    </div>
+  </template>
+</div>

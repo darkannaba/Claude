@@ -1,6 +1,8 @@
-"""Administration : paramètres, chambres, tarifs, modules, utilisateurs, sauvegardes, journal, API."""
+"""Administration : paramètres, chambres, tarifs, gestion dynamique des tarifs, modules, utilisateurs, sauvegardes,
+journal, API."""
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Form, Request
@@ -10,15 +12,18 @@ from sqlalchemy import func, select
 from app.config import config
 from app.deps import AdminUser, DbSession, attempt, redirect
 from app.models.audit import AuditLog
-from app.models.room import RatePeriod, Room, RoomType
+from app.models.customer import Company
+from app.models.room import SEASON_LEVELS, LongStayDiscount, RatePeriod, Room, RoomType, Season
 from app.models.system import FeatureFlag
 from app.models.user import ROLES, User
 from app.database import SessionLocal
-from app.services import licensing, printing, theme_manager
+from app.services import licensing, pricing_admin, printing, theme_manager
 from app.services.audit_log import log_action
-from app.services.common import BusinessError, to_date, to_int
+from app.services.common import BusinessError, parse_date, to_date, to_int
+from app.services.i18n import activate, t
+from app.services.pricing import load_calendar
 from app.services.security import hash_password, password_problems
-from app.services.settings import load_hotel_settings, save_hotel_settings, settings_form
+from app.services.settings import load_hotel_settings, now_of, save_hotel_settings, settings_form, today_of
 from app.templating import render
 
 router = APIRouter(prefix="/admin")
@@ -113,6 +118,8 @@ async def room_type_update(request: Request, db: DbSession, user: AdminUser, typ
         old_price = room_type.base_price
         for key, value in values.items():
             setattr(room_type, key, value)
+        await pricing_admin.record_change(db, user, "room_type", room_type.code, room_type.name, "base_price",
+                                          old_price, room_type.base_price, "", now_of(await load_hotel_settings(db)))
         await log_action(db, user, "room_type_updated", "room_type", room_type.code,
                          f"prix {old_price} → {room_type.base_price}")
 
@@ -207,6 +214,184 @@ async def rate_delete(request: Request, db: DbSession, user: AdminUser, rate_id:
 
     await attempt(request, db, action, "Tarif supprimé.")
     return redirect("/admin/rates")
+
+
+# ---------------------------------------------------------------- gestion dynamique des tarifs
+# Toutes les modifications passent par app/services/pricing_admin.py (validation, journal d'audit, price_changes).
+# Elles ne s'appliquent qu'aux nouvelles réservations et aux nuits non clôturées : les nuitées postées par l'audit
+# de nuit et les factures émises restent figées.
+async def _simulate(db, hs, room_id: str, check_in: str, check_out: str, company_id: str):
+    """Simulation d'un séjour : (chambre, entreprise, devis). Lève BusinessError si la saisie est invalide."""
+    room = await db.get(Room, int(room_id)) if str(room_id).isdigit() else None
+    if room is None:
+        raise BusinessError("Chambre introuvable.")
+    start = pricing_admin.parse_date_value(check_in)
+    end = pricing_admin.parse_date_value(check_out)
+    if end <= start:
+        raise BusinessError(pricing_admin.MSG_DATES_ORDER)
+    if (end - start).days > 365:
+        raise BusinessError("Un séjour ne peut pas dépasser 365 nuits.")
+    company = await db.get(Company, int(company_id)) if str(company_id).isdigit() else None
+    calendar = await load_calendar(db, hs, start, end)
+    return room, company, calendar.quote(room, start, end, company)
+
+
+@router.get("/pricing")
+async def pricing_page(request: Request, db: DbSession, user: AdminUser, day: str = "", sim_room: str = "",
+                       sim_in: str = "", sim_out: str = "", sim_company: str = ""):
+    hs = await load_hotel_settings(db)
+    today = today_of(hs)
+    selected = parse_date(day) or today
+    calendar = await load_calendar(db, hs, selected, selected + timedelta(days=1))
+    rooms = (await db.scalars(select(Room).order_by(Room.number))).unique().all()
+    room_types = (await db.scalars(select(RoomType).order_by(RoomType.code))).all()
+    rows, client_rooms = [], {}
+    for room in rooms:
+        detail = calendar.breakdown(room.room_type, selected, room=room)
+        type_price = calendar.type_price(room.room_type, selected)
+        # Pourcentages successifs appliqués à cette date (saison puis week-end) : repris par le calcul en direct
+        # côté navigateur (composant Alpine « pricingRow »), identique au serveur.
+        percents = [step.percent for step in detail.steps if step.percent is not None]
+        rows.append({"room": room, "type_price": type_price, "detail": detail})
+        client_rooms[str(room.id)] = {"type_price": type_price, "percents": percents}
+    simulation, sim_error, sim_company_obj = None, "", None
+    if sim_room or sim_in or sim_out:
+        try:
+            _, sim_company_obj, simulation = await _simulate(db, hs, sim_room, sim_in, sim_out, sim_company)
+        except BusinessError as exc:
+            sim_error = str(exc)
+    seasons = (await db.scalars(select(Season).order_by(Season.start_date, Season.id))).unique().all()
+    tiers = (await db.scalars(select(LongStayDiscount).order_by(LongStayDiscount.min_nights))).all()
+    companies = (await db.scalars(select(Company).order_by(Company.name))).all()
+    return await render(
+        request, db, "admin/pricing.html", selected=selected, rows=rows, room_types=room_types, seasons=seasons,
+        tiers=tiers, companies=companies, history=await pricing_admin.recent_changes(db),
+        weekdays=pricing_admin.WEEKDAYS, season_levels=SEASON_LEVELS, simulation=simulation, sim_error=sim_error,
+        sim={"room": sim_room, "check_in": sim_in or today.isoformat(),
+             "check_out": sim_out or (today + timedelta(days=1)).isoformat(), "company": sim_company},
+        sim_company_obj=sim_company_obj,
+        pricing_data={"vat_rate": hs.vat_rate_accommodation, "symbol": hs.currency_symbol, "rooms": client_rooms},
+    )
+
+
+@router.get("/pricing/simulate")
+async def pricing_simulate(request: Request, db: DbSession, user: AdminUser, room_id: str = "", check_in: str = "",
+                           check_out: str = "", company_id: str = ""):
+    """Simulateur (JSON) : détail par nuit et totaux, calculés par le moteur de tarification du serveur."""
+    lang = activate(request)
+    hs = await load_hotel_settings(db)
+    try:
+        room, company, quote = await _simulate(db, hs, room_id, check_in, check_out, company_id)
+    except BusinessError as exc:
+        return JSONResponse({"ok": False, "error": t(str(exc), lang)}, status_code=400)
+    data = quote.as_dict()
+    for night in data["nights"]:
+        for step in night["steps"]:
+            step["label"] = t(step["label"], lang)
+    data.update(ok=True, room=room.number, room_type=room.room_type.name, currency=hs.currency_code,
+                company=company.name if company else None)
+    return JSONResponse(data)
+
+
+@router.post("/pricing/bulk")
+async def pricing_bulk(request: Request, db: DbSession, user: AdminUser):
+    form = await request.form()
+
+    async def action():
+        await pricing_admin.bulk_update(db, user, form)
+
+    await attempt(request, db, action, "Prix mis à jour (les nuitées déjà clôturées ne changent pas).")
+    return redirect("/admin/pricing")
+
+
+@router.post("/pricing/rooms/{room_id}")
+async def pricing_room(request: Request, db: DbSession, user: AdminUser, room_id: int):
+    form = await request.form()
+
+    async def action():
+        reset = form.get("action") == "reset"
+        price = None if reset else pricing_admin.parse_price(form.get("price_override"), allow_empty=True)
+        await pricing_admin.set_room_price(db, user, room_id, price, str(form.get("reason") or "").strip())
+
+    await attempt(request, db, action, "Prix de la chambre mis à jour.")
+    return redirect("/admin/pricing")
+
+
+@router.post("/pricing/seasons")
+async def pricing_season_create(request: Request, db: DbSession, user: AdminUser):
+    form = await request.form()
+
+    async def action():
+        await pricing_admin.create_season(db, user, form)
+
+    await attempt(request, db, action, "Saison ajoutée.")
+    return redirect("/admin/pricing#saisons")
+
+
+@router.post("/pricing/seasons/{season_id}")
+async def pricing_season_update(request: Request, db: DbSession, user: AdminUser, season_id: int):
+    form = await request.form()
+
+    async def action():
+        await pricing_admin.update_season(db, user, season_id, form)
+
+    await attempt(request, db, action, "Saison mise à jour.")
+    return redirect("/admin/pricing#saisons")
+
+
+@router.post("/pricing/seasons/{season_id}/delete")
+async def pricing_season_delete(request: Request, db: DbSession, user: AdminUser, season_id: int):
+    form = await request.form()
+
+    async def action():
+        await pricing_admin.delete_season(db, user, season_id, str(form.get("reason") or "").strip())
+
+    await attempt(request, db, action, "Saison supprimée.")
+    return redirect("/admin/pricing#saisons")
+
+
+@router.post("/pricing/long-stay")
+async def pricing_tier_create(request: Request, db: DbSession, user: AdminUser):
+    form = await request.form()
+
+    async def action():
+        await pricing_admin.create_tier(db, user, form)
+
+    await attempt(request, db, action, "Palier ajouté.")
+    return redirect("/admin/pricing#long-sejour")
+
+
+@router.post("/pricing/long-stay/{tier_id}")
+async def pricing_tier_update(request: Request, db: DbSession, user: AdminUser, tier_id: int):
+    form = await request.form()
+
+    async def action():
+        await pricing_admin.update_tier(db, user, tier_id, form)
+
+    await attempt(request, db, action, "Palier mis à jour.")
+    return redirect("/admin/pricing#long-sejour")
+
+
+@router.post("/pricing/long-stay/{tier_id}/delete")
+async def pricing_tier_delete(request: Request, db: DbSession, user: AdminUser, tier_id: int):
+    form = await request.form()
+
+    async def action():
+        await pricing_admin.delete_tier(db, user, tier_id, str(form.get("reason") or "").strip())
+
+    await attempt(request, db, action, "Palier supprimé.")
+    return redirect("/admin/pricing#long-sejour")
+
+
+@router.post("/pricing/weekend")
+async def pricing_weekend(request: Request, db: DbSession, user: AdminUser):
+    form = await request.form()
+
+    async def action():
+        await pricing_admin.save_weekend(db, user, form)
+
+    await attempt(request, db, action, "Majoration week-end enregistrée.")
+    return redirect("/admin/pricing#week-end")
 
 
 # ---------------------------------------------------------------- modules

@@ -1,0 +1,278 @@
+{% extends "layout/base.html" %}
+{% import "macros/ui.html" as ui with context %}
+{% block title %}{{ _("Gestion des tarifs") }}{% endblock %}
+{% block content %}
+{#- Gestion dynamique des tarifs (routes /admin/pricing/*, logique dans app/services/pricing_admin.py, calcul dans
+    app/services/pricing.py). Le TTC des chambres est recalculé en direct par le composant Alpine « pricingRow »
+    (app/static/js/app.js) à partir du bloc JSON ci-dessous : la CSP interdit tout script en ligne. -#}
+<script type="application/json" id="pricing-data">{{ pricing_data|tojson }}</script>
+
+<div class="text-start">
+  <h1 class="page-title">{{ _("Gestion des tarifs") }}</h1>
+  <p class="page-subtitle">{{ _("Prix de référence : prix négocié de la réservation, sinon prix spécifique de la chambre, sinon tarif saisonnier fixe, sinon prix de base du type. S'appliquent ensuite l'ajustement de saison, la majoration week-end, la remise long séjour puis la remise entreprise, avec un arrondi au dinar.") }}</p>
+  <p class="help">{{ _("Une modification de tarif ne change jamais les nuitées déjà clôturées par l'audit de nuit ni les factures émises : elle s'applique aux nouvelles réservations et aux nuits non encore clôturées.") }}</p>
+</div>
+{% include "admin/_nav.html" %}
+
+{# ------------------------------------------------------------------ chambres #}
+<section class="card" id="chambres" aria-labelledby="pricing-rooms-title">
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div class="card-title" id="pricing-rooms-title">{{ icon('building', 'h-4 w-4') }} {{ _("Prix par chambre") }} ({{ rows|length }})</div>
+    <form method="get" action="/admin/pricing" class="flex flex-wrap items-end gap-2">
+      <label class="block"><span class="label">{{ _("Prix final pour la nuit du") }}</span>
+        <input class="input" type="date" name="day" value="{{ selected.isoformat() }}" required></label>
+      <button class="btn-secondary btn-sm">{{ icon('calendar', 'h-4 w-4') }} {{ _("Afficher") }}</button>
+    </form>
+  </div>
+  <p class="help mb-3">{{ _("Nuit du") }} {{ selected|date }} ({{ selected|weekday }}) · {{ _("TVA hébergement") }} {{ hs.vat_rate_accommodation }} % · {{ _("Laisser le prix spécifique vide pour appliquer le prix du type.") }}</p>
+  <div class="table-wrap"><table class="table">
+    <thead><tr>
+      <th class="text-start">{{ _("N°") }}</th><th class="text-start">{{ _("Type") }}</th>
+      <th class="num">{{ _("Prix du type") }}</th><th class="text-start">{{ _("Prix spécifique TTC") }}</th>
+      <th class="text-start">{{ _("Ajustements") }}</th>
+      <th class="num">{{ _("HT") }}</th><th class="num">{{ _("TVA") }}</th><th class="num">{{ _("Prix final TTC") }}</th>
+    </tr></thead>
+    <tbody>
+    {% for row in rows %}
+      {% set room = row.room %}{% set d = row.detail %}
+      <tr class="{{ 'opacity-50' if not room.active }}" x-data="pricingRow('{{ room.id }}', '{{ room.price_override if room.price_override is not none else '' }}')">
+        <td class="font-mono font-semibold">{{ room.number }}</td>
+        <td>{{ room.room_type.name }}</td>
+        <td class="num">{{ row.type_price|money }}</td>
+        <td>
+          <form method="post" action="/admin/pricing/rooms/{{ room.id }}" class="flex flex-wrap items-center gap-1.5">
+            {{ ui.csrf() }}
+            <input class="input w-28" type="number" min="0" max="10000000" step="1" name="price_override" x-model="override"
+                   value="{{ room.price_override if room.price_override is not none else '' }}" placeholder="{{ row.type_price }}"
+                   aria-label="{{ _('Prix spécifique TTC') }} {{ room.number }}">
+            <button class="btn-secondary btn-sm" name="action" value="save">{{ _("Enregistrer") }}</button>
+            {% if room.price_override is not none %}
+              <button class="btn-ghost btn-sm" name="action" value="reset" title="{{ _('Revenir au prix du type') }}">{{ icon('x', 'h-4 w-4') }}<span class="sr-only">{{ _("Revenir au prix du type") }}</span></button>
+            {% endif %}
+          </form>
+        </td>
+        <td>
+          <div class="flex flex-wrap gap-1">
+          {% for step in d.steps %}
+            {% if step.percent is not none %}
+              <span class="{{ 'badge-amber' if step.percent > 0 else 'badge-green' }}" title="{{ step.detail }}">{{ step.label|tr }} {{ '%+d'|format(step.percent) }} %</span>
+            {% elif loop.first %}
+              <span class="badge-slate">{{ step.label|tr }}</span>
+            {% endif %}
+          {% endfor %}
+          </div>
+        </td>
+        <td class="num" x-text="money(ht())">{{ d.total_ht|money }}</td>
+        <td class="num" x-text="money(vat())">{{ d.total_vat|money }}</td>
+        <td class="num font-semibold" x-text="money(ttc())">{{ d.total_ttc|money }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="8">{{ ui.empty("Aucune chambre.") }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+{# ------------------------------------------------------------------ mise à jour globale #}
+<section class="card space-y-4" id="masse" aria-labelledby="pricing-bulk-title">
+  <div class="card-title" id="pricing-bulk-title">{{ icon('swap', 'h-4 w-4') }} {{ _("Mise à jour globale rapide") }}</div>
+  <div class="grid gap-5 lg:grid-cols-2">
+    <form method="post" action="/admin/pricing/bulk" class="space-y-3 rounded-lg border border-slate-200 p-4 dark:border-slate-800">
+      {{ ui.csrf() }}<input type="hidden" name="mode" value="percent">
+      <p class="text-sm font-semibold text-slate-700 dark:text-slate-200">{{ _("Hausse ou baisse en pourcentage") }}</p>
+      <div class="grid gap-3 sm:grid-cols-2">
+        <label class="block"><span class="label">{{ _("Variation (%)") }} <span class="text-rose-500">*</span></span>
+          <input class="input" type="number" name="percent" min="-90" max="300" step="1" required placeholder="+5 / -10"></label>
+        <label class="block"><span class="label">{{ _("Types concernés") }}</span>
+          <select class="input" name="room_type_id"><option value="">{{ _("Tous les types") }}</option>
+            {% for rt in room_types %}<option value="{{ rt.id }}">{{ rt.name }}</option>{% endfor %}</select></label>
+      </div>
+      <label class="flex items-center gap-2 text-sm"><input class="checkbox" type="checkbox" name="include_rooms" value="1" checked> {{ _("Appliquer aussi aux prix spécifiques des chambres") }}</label>
+      <label class="flex items-center gap-2 text-sm"><input class="checkbox" type="checkbox" name="round_100" value="1" checked> {{ _("Arrondir à 100 DA") }}</label>
+      {{ ui.field('Motif', 'reason', placeholder='Ex. révision annuelle') }}
+      <button class="btn-primary">{{ icon('check', 'h-4 w-4') }} {{ _("Appliquer la variation") }}</button>
+    </form>
+    <form method="post" action="/admin/pricing/bulk" class="space-y-3 rounded-lg border border-slate-200 p-4 dark:border-slate-800">
+      {{ ui.csrf() }}<input type="hidden" name="mode" value="base">
+      <p class="text-sm font-semibold text-slate-700 dark:text-slate-200">{{ _("Prix de base par type") }}</p>
+      <div class="grid gap-3 sm:grid-cols-2">
+        {% for rt in room_types %}
+          <label class="block"><span class="label">{{ rt.name }} ({{ rt.code }})</span>
+            <input class="input" type="number" min="0" max="10000000" step="1" name="base_price_{{ rt.id }}" value="{{ rt.base_price }}"></label>
+        {% endfor %}
+      </div>
+      <label class="flex items-center gap-2 text-sm"><input class="checkbox" type="checkbox" name="round_100" value="1"> {{ _("Arrondir à 100 DA") }}</label>
+      {{ ui.field('Motif', 'reason', placeholder='Ex. révision annuelle') }}
+      <button class="btn-primary">{{ icon('check', 'h-4 w-4') }} {{ _("Enregistrer les prix de base") }}</button>
+    </form>
+  </div>
+</section>
+
+{# ------------------------------------------------------------------ saisons #}
+<section class="card space-y-4" id="saisons" aria-labelledby="pricing-seasons-title">
+  <div class="card-title" id="pricing-seasons-title">{{ icon('sun', 'h-4 w-4') }} {{ _("Saisons") }}</div>
+  <p class="help">{{ _("Ajustement en pourcentage (positif ou négatif) appliqué au prix de référence sur la période, date de fin exclue. Si plusieurs saisons actives se chevauchent, la priorité la plus élevée l'emporte.") }}</p>
+  {% for s in seasons %}
+    <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-800 {{ 'opacity-60' if not s.active }}">
+      <div class="mb-2 flex flex-wrap items-center gap-2">
+        <span class="{{ {'high': 'badge-red', 'medium': 'badge-amber', 'low': 'badge-blue'}.get(s.level, 'badge-slate') }}">{{ s.level_label|tr }}</span>
+        <span class="font-medium">{{ s.name }}</span>
+        <span class="badge-slate">{{ '%+d'|format(s.adjustment_percent) }} %</span>
+        {% if s.active %}<span class="badge-green">{{ _("Active") }}</span>{% else %}<span class="badge-slate">{{ _("Inactive") }}</span>{% endif %}
+      </div>
+      <form method="post" action="/admin/pricing/seasons/{{ s.id }}" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+        {{ ui.csrf() }}
+        <label class="block xl:col-span-2"><span class="label">{{ _("Nom de la saison") }}</span><input class="input" name="name" value="{{ s.name }}" maxlength="120" required></label>
+        <label class="block"><span class="label">{{ _("Niveau") }}</span><select class="input" name="level">
+          {% for code, label in season_levels.items() %}<option value="{{ code }}" {{ 'selected' if code == s.level }}>{{ label|tr }}</option>{% endfor %}</select></label>
+        <label class="block"><span class="label">{{ _("Du") }}</span><input class="input" type="date" name="start_date" value="{{ s.start_date.isoformat() }}" required></label>
+        <label class="block"><span class="label">{{ _("Au (exclu)") }}</span><input class="input" type="date" name="end_date" value="{{ s.end_date.isoformat() }}" required></label>
+        <label class="block"><span class="label">{{ _("Ajustement (%)") }}</span><input class="input" type="number" name="adjustment_percent" min="-90" max="300" value="{{ s.adjustment_percent }}" required></label>
+        <label class="block"><span class="label">{{ _("Priorité") }}</span><input class="input" type="number" name="priority" min="-100" max="100" value="{{ s.priority }}"></label>
+        <label class="block"><span class="label">{{ _("Type de chambre") }}</span><select class="input" name="room_type_id">
+          <option value="">{{ _("Tous les types") }}</option>
+          {% for rt in room_types %}<option value="{{ rt.id }}" {{ 'selected' if rt.id == s.room_type_id }}>{{ rt.name }}</option>{% endfor %}</select></label>
+        <label class="flex items-center gap-2 text-sm"><input class="checkbox" type="checkbox" name="active" value="1" {{ 'checked' if s.active }}> {{ _("Active") }}</label>
+        <label class="block sm:col-span-2 lg:col-span-3 xl:col-span-6"><span class="label">{{ _("Motif") }}</span><input class="input" name="reason" maxlength="1000"></label>
+        <div class="flex items-end"><button class="btn-secondary btn-sm">{{ _("Enregistrer") }}</button></div>
+      </form>
+      <form method="post" action="/admin/pricing/seasons/{{ s.id }}/delete" class="mt-2 flex justify-end" data-confirm="{{ _('Supprimer cette saison ?') }}">
+        {{ ui.csrf() }}<button class="btn-ghost btn-sm">{{ icon('trash', 'h-4 w-4') }} {{ _("Supprimer") }}</button>
+      </form>
+    </div>
+  {% else %}
+    {{ ui.empty("Aucune saison : seul le prix de référence s'applique.") }}
+  {% endfor %}
+  <form method="post" action="/admin/pricing/seasons" class="grid gap-3 border-t border-slate-200 pt-4 dark:border-slate-800 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+    {{ ui.csrf() }}
+    <label class="block xl:col-span-2"><span class="label">{{ _("Nom de la saison") }} <span class="text-rose-500">*</span></span><input class="input" name="name" maxlength="120" required placeholder="{{ _('Ex. Été – haute saison') }}"></label>
+    <label class="block"><span class="label">{{ _("Niveau") }}</span><select class="input" name="level">
+      {% for code, label in season_levels.items() %}<option value="{{ code }}" {{ 'selected' if code == 'medium' }}>{{ label|tr }}</option>{% endfor %}</select></label>
+    <label class="block"><span class="label">{{ _("Du") }} <span class="text-rose-500">*</span></span><input class="input" type="date" name="start_date" required></label>
+    <label class="block"><span class="label">{{ _("Au (exclu)") }} <span class="text-rose-500">*</span></span><input class="input" type="date" name="end_date" required></label>
+    <label class="block"><span class="label">{{ _("Ajustement (%)") }} <span class="text-rose-500">*</span></span><input class="input" type="number" name="adjustment_percent" min="-90" max="300" required></label>
+    <label class="block"><span class="label">{{ _("Priorité") }}</span><input class="input" type="number" name="priority" min="-100" max="100" value="0"></label>
+    <label class="block"><span class="label">{{ _("Type de chambre") }}</span><select class="input" name="room_type_id">
+      <option value="">{{ _("Tous les types") }}</option>
+      {% for rt in room_types %}<option value="{{ rt.id }}">{{ rt.name }}</option>{% endfor %}</select></label>
+    <label class="flex items-center gap-2 text-sm"><input class="checkbox" type="checkbox" name="active" value="1" checked> {{ _("Active") }}</label>
+    <label class="block sm:col-span-2 lg:col-span-3 xl:col-span-6"><span class="label">{{ _("Motif") }}</span><input class="input" name="reason" maxlength="1000"></label>
+    <div class="flex items-end"><button class="btn-primary">{{ icon('plus', 'h-4 w-4') }} {{ _("Ajouter la saison") }}</button></div>
+  </form>
+</section>
+
+<div class="grid gap-5 lg:grid-cols-2">
+  {# ------------------------------------------------------------------ paliers long séjour #}
+  <section class="card space-y-4" id="long-sejour" aria-labelledby="pricing-tiers-title">
+    <div class="card-title" id="pricing-tiers-title">{{ icon('moon', 'h-4 w-4') }} {{ _("Remises long séjour") }}</div>
+    <p class="help">{{ _("Le palier retenu est celui dont le nombre de nuits minimum est le plus élevé sans dépasser la durée totale du séjour.") }}</p>
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th class="text-start">{{ _("Nuits minimum") }}</th><th class="text-start">{{ _("Remise (%)") }}</th><th class="text-start">{{ _("Actif") }}</th><th></th></tr></thead>
+      <tbody>
+      {% for tier in tiers %}
+        <tr class="{{ 'opacity-60' if not tier.active }}">
+          <td><input class="input w-24" form="tier-{{ tier.id }}" type="number" name="min_nights" min="2" max="365" value="{{ tier.min_nights }}" required></td>
+          <td><input class="input w-24" form="tier-{{ tier.id }}" type="number" name="discount_percent" min="1" max="90" value="{{ tier.discount_percent }}" required></td>
+          <td><input class="checkbox" form="tier-{{ tier.id }}" type="checkbox" name="active" value="1" {{ 'checked' if tier.active }} aria-label="{{ _('Actif') }}"></td>
+          <td class="text-end">
+            <div class="flex flex-wrap justify-end gap-1">
+              <form id="tier-{{ tier.id }}" method="post" action="/admin/pricing/long-stay/{{ tier.id }}">{{ ui.csrf() }}<button class="btn-secondary btn-sm">{{ _("Enregistrer") }}</button></form>
+              <form method="post" action="/admin/pricing/long-stay/{{ tier.id }}/delete" data-confirm="{{ _('Supprimer ce palier ?') }}">{{ ui.csrf() }}<button class="btn-ghost btn-sm" title="{{ _('Supprimer') }}">{{ icon('trash', 'h-4 w-4') }}<span class="sr-only">{{ _("Supprimer") }}</span></button></form>
+            </div>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4">{{ ui.empty("Aucun palier long séjour.") }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    <form method="post" action="/admin/pricing/long-stay" class="grid gap-3 border-t border-slate-200 pt-4 dark:border-slate-800 sm:grid-cols-3">
+      {{ ui.csrf() }}
+      <label class="block"><span class="label">{{ _("Nuits minimum") }} <span class="text-rose-500">*</span></span><input class="input" type="number" name="min_nights" min="2" max="365" required placeholder="7"></label>
+      <label class="block"><span class="label">{{ _("Remise (%)") }} <span class="text-rose-500">*</span></span><input class="input" type="number" name="discount_percent" min="1" max="90" required placeholder="5"></label>
+      <label class="flex items-end gap-2 pb-2 text-sm"><input class="checkbox" type="checkbox" name="active" value="1" checked> {{ _("Actif") }}</label>
+      <div class="sm:col-span-3"><button class="btn-primary">{{ icon('plus', 'h-4 w-4') }} {{ _("Ajouter le palier") }}</button></div>
+    </form>
+  </section>
+
+  {# ------------------------------------------------------------------ week-end #}
+  <section class="card space-y-4" id="week-end" aria-labelledby="pricing-weekend-title">
+    <div class="card-title" id="pricing-weekend-title">{{ icon('calendar', 'h-4 w-4') }} {{ _("Majoration week-end") }}</div>
+    <p class="help">{{ _("Appliquée après l'ajustement de saison, sur les nuits des jours cochés (nuit du vendredi au samedi = vendredi).") }}</p>
+    <form method="post" action="/admin/pricing/weekend" class="space-y-3">
+      {{ ui.csrf() }}
+      <fieldset><legend class="label">{{ _("Jours de week-end") }}</legend>
+        <div class="flex flex-wrap gap-3">
+        {% for label in weekdays %}
+          <label class="flex items-center gap-1.5 text-sm"><input class="checkbox" type="checkbox" name="weekend_day" value="{{ loop.index0 }}" {{ 'checked' if loop.index0 in hs.weekend_set }}> {{ label|tr }}</label>
+        {% endfor %}
+        </div>
+      </fieldset>
+      <label class="block"><span class="label">{{ _("Majoration (%)") }} <span class="text-rose-500">*</span></span>
+        <input class="input w-32" type="number" name="weekend_surcharge_percent" min="-90" max="300" value="{{ hs.weekend_surcharge_percent }}" required></label>
+      {{ ui.field('Motif', 'reason') }}
+      <button class="btn-primary">{{ icon('check', 'h-4 w-4') }} {{ _("Enregistrer la majoration") }}</button>
+    </form>
+  </section>
+</div>
+
+{# ------------------------------------------------------------------ simulateur #}
+<section class="card space-y-4" id="simulateur" aria-labelledby="pricing-sim-title">
+  <div class="card-title" id="pricing-sim-title">{{ icon('chart', 'h-4 w-4') }} {{ _("Simulateur de prix") }}</div>
+  <form method="get" action="/admin/pricing#simulateur" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+    <input type="hidden" name="day" value="{{ selected.isoformat() }}">
+    <label class="block"><span class="label">{{ _("Arrivée") }}</span><input class="input" type="date" name="sim_in" value="{{ sim.check_in }}" required></label>
+    <label class="block"><span class="label">{{ _("Départ") }}</span><input class="input" type="date" name="sim_out" value="{{ sim.check_out }}" required></label>
+    <label class="block"><span class="label">{{ _("Chambre") }}</span><select class="input" name="sim_room" required>
+      {% for row in rows %}<option value="{{ row.room.id }}" {{ 'selected' if row.room.id|string == sim.room }}>{{ row.room.number }} – {{ row.room.room_type.name }}</option>{% endfor %}</select></label>
+    <label class="block"><span class="label">{{ _("Entreprise (facultatif)") }}</span><select class="input" name="sim_company">
+      <option value="">—</option>
+      {% for c in companies %}<option value="{{ c.id }}" {{ 'selected' if c.id|string == sim.company }}>{{ c.name }}{% if c.discount_percent %} (-{{ c.discount_percent }} %){% endif %}</option>{% endfor %}</select></label>
+    <div class="flex items-end"><button class="btn-primary">{{ icon('chart', 'h-4 w-4') }} {{ _("Simuler") }}</button></div>
+  </form>
+  {% if sim_error %}
+    <div class="flash-error">{{ icon('alert', 'h-5 w-5 shrink-0') }}<span>{{ sim_error|tr }}</span></div>
+  {% elif simulation %}
+    <p class="text-sm text-slate-600 dark:text-slate-300">
+      {{ simulation.nights_count }} {{ _("nuit(s)") }}{% if simulation.long_stay_percent %} · {{ _("Remise long séjour") }} -{{ simulation.long_stay_percent }} %{% endif %}{% if sim_company_obj %} · {{ sim_company_obj.name }}{% endif %}
+    </p>
+    <div class="table-wrap"><table class="table" id="simulation-result">
+      <thead><tr><th class="text-start">{{ _("Nuit") }}</th><th class="text-start">{{ _("Détail du calcul") }}</th><th class="num">{{ _("HT") }}</th><th class="num">{{ _("TVA") }}</th><th class="num">{{ _("TTC") }}</th></tr></thead>
+      <tbody>
+      {% for n in simulation.nights %}
+        <tr>
+          <td class="whitespace-nowrap">{{ n.night|weekday }} {{ n.night|date }}</td>
+          <td><ol class="space-y-0.5 text-xs">
+            {% for step in n.steps %}
+              <li class="flex flex-wrap justify-between gap-2"><span>{{ step.label|tr }}{% if step.percent is not none %} {{ '%+d'|format(step.percent) }} %{% endif %}{% if step.detail and step.code in ('season', 'rate_period') %} · {{ step.detail }}{% endif %}</span>
+                <span class="tabular-nums">{% if not loop.first %}{{ '+' if step.delta >= 0 }}{{ step.delta|money }} → {% endif %}{{ step.amount|money }}</span></li>
+            {% endfor %}
+          </ol></td>
+          <td class="num">{{ n.total_ht|money }}</td><td class="num">{{ n.total_vat|money }}</td><td class="num font-semibold">{{ n.total_ttc|money }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+      <tfoot><tr class="font-semibold"><td colspan="2">{{ _("Total du séjour") }}</td>
+        <td class="num">{{ simulation.total_ht|money }}</td><td class="num">{{ simulation.total_vat|money }}</td><td class="num" data-total="{{ simulation.total_ttc }}">{{ simulation.total_ttc|money }}</td></tr></tfoot>
+    </table></div>
+    <p class="help">{{ _("Hors taxe de séjour. Un prix négocié saisi sur une réservation remplace ce calcul.") }}</p>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------------ historique #}
+<section class="card" id="historique" aria-labelledby="pricing-history-title">
+  <div class="card-title" id="pricing-history-title">{{ icon('clock', 'h-4 w-4') }} {{ _("Historique des modifications de prix") }}</div>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th class="text-start">{{ _("Date") }}</th><th class="text-start">{{ _("Utilisateur") }}</th><th class="text-start">{{ _("Cible") }}</th><th class="text-start">{{ _("Champ") }}</th><th class="text-start">{{ _("Ancienne valeur") }}</th><th class="text-start">{{ _("Nouvelle valeur") }}</th><th class="text-start">{{ _("Motif") }}</th></tr></thead>
+    <tbody>
+    {% for c in history %}
+      <tr><td class="whitespace-nowrap">{{ c.created_at|dt }}</td><td>{{ c.username }}</td>
+        <td>{{ c.target_type_label|tr }} · {{ c.target_label }}</td><td>{{ c.field_label|tr }}</td>
+        <td class="tabular-nums">{{ c.old_value }}</td><td class="tabular-nums font-medium">{{ c.new_value }}</td><td>{{ c.reason or '—' }}</td></tr>
+    {% else %}
+      <tr><td colspan="7">{{ ui.empty("Aucune modification de prix enregistrée.") }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}

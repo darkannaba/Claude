@@ -50,8 +50,13 @@
     {% endif %}
   </section>
 
-  <section class="card" x-data='guestPicker({{ ({"id": guest.id, "name": guest.full_name, "phone": guest.phone, "id_number": guest.id_number, "status": guest.status} if guest else none)|tojson }})'>
-    <div class="card-title">{{ icon('users', 'h-4 w-4') }} 3 · {{ _("Client") }}</div>
+  <section class="card" x-data='guestPicker({{ ({"id": guest.id, "name": guest.full_name, "phone": guest.phone, "id_number": guest.id_number, "status": guest.status} if guest else none)|tojson }})'
+           @id-scan-applied.window="choose($event.detail)">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <div class="card-title">{{ icon('users', 'h-4 w-4') }} 3 · {{ _("Client") }}</div>
+      {% with scan_context='new', scan_reservation=None, scan_guest=None %}{% include "pms/_id_scan.html" %}{% endwith %}
+    </div>
+    <p class="help mb-3">{{ _("Scannez la MRZ avec la douchette (même sans ouvrir la fenêtre) ou photographiez la pièce : le client est créé ou retrouvé puis sélectionné.") }}</p>
     {{ ui.alerts_list(alerts) }}
     <input type="hidden" name="guest_id" :value="selected ? selected.id : ''">
     <template x-if="selected">

@@ -182,7 +182,8 @@ async def reservation_form(request: Request, db: DbSession, user: StaffUser, che
     rooms = await booking.free_rooms(db, ci, co, rt_id)
     calendar = await load_calendar(db, hs, ci, co)
     nights = booking.nights_between(ci, co)
-    estimates = {r.id: sum(calendar.price(r.room_type, n) for n in nights) for r in rooms}
+    # Estimation par chambre : prix spécifique de la chambre, saisons, week-end et remise long séjour inclus.
+    estimates = {r.id: calendar.quote(r, ci, co).total_ttc for r in rooms}
     guest = await db.get(Guest, int(guest_id)) if guest_id.isdigit() else None
     alerts = await crm.guest_alerts(db, guest, hs) if guest else []
     return await render(

@@ -499,3 +499,405 @@
     });
   });
 })();
+
+// ------------------------------------------------------------ gestion des tarifs (Administration > Gestion des tarifs)
+// Bloc indépendant : composant Alpine « pricingRow », recalcul en direct du prix final TTC d'une chambre quand le
+// prix spécifique est modifié. Reproduit exactement app/services/pricing.py (fractions exactes, arrondi au dinar
+// 0,5 → supérieur) et split_vat() de app/services/common.py (HT arrondi au plus proche, demi → pair, comme round()
+// en Python). Données lues dans le bloc JSON #pricing-data (la CSP interdit tout script en ligne).
+(function () {
+  "use strict";
+
+  var readPricing = function () {
+    var node = document.getElementById("pricing-data");
+    if (!node) return { rooms: {}, vat_rate: 0, symbol: "DA" };
+    try { return JSON.parse(node.textContent || "{}") || { rooms: {} }; } catch (e) { return { rooms: {} }; }
+  };
+
+  // Prix TTC arrondi : référence × Π (100 + p) / 100, en entiers exacts (BigInt), demi-dinar au supérieur.
+  var finalPrice = function (reference, percents) {
+    var num = BigInt(Math.max(0, Math.round(reference)));
+    var den = BigInt(1);
+    (percents || []).forEach(function (p) {
+      num = num * BigInt(100 + p);
+      den = den * BigInt(100);
+    });
+    if (num <= BigInt(0)) return 0;
+    return Number((BigInt(2) * num + den) / (BigInt(2) * den));
+  };
+
+  var roundHalfEven = function (x) {
+    var f = Math.floor(x);
+    var diff = x - f;
+    if (diff > 0.5) return f + 1;
+    if (diff < 0.5) return f;
+    return f % 2 === 0 ? f : f + 1;
+  };
+
+  var splitVat = function (ttc, rate) {
+    if (!rate) return [ttc, 0];
+    var ht = roundHalfEven(ttc / (1 + rate / 100));
+    return [ht, ttc - ht];
+  };
+
+  var formatMoney = function (value, symbol) {
+    var digits = String(Math.round(value));
+    var negative = digits.charAt(0) === "-";
+    if (negative) digits = digits.slice(1);
+    var grouped = digits.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+    return (negative ? "-" : "") + grouped + " " + (symbol || "DA");
+  };
+
+  window.pricingEngine = { finalPrice: finalPrice, splitVat: splitVat, formatMoney: formatMoney };
+
+  document.addEventListener("alpine:init", function () {
+    var Alpine = window.Alpine;
+    var data = null;
+
+    Alpine.data("pricingRow", function (roomId, initial) {
+      if (data === null) data = readPricing();
+      var info = (data.rooms || {})[roomId] || { type_price: 0, percents: [] };
+      return {
+        override: initial === undefined || initial === null ? "" : String(initial),
+        valid: function () {
+          var value = String(this.override === null ? "" : this.override).trim();
+          return value === "" || (/^\d+$/.test(value) && Number(value) <= 10000000);
+        },
+        reference: function () {
+          var value = String(this.override === null ? "" : this.override).trim();
+          return value === "" ? info.type_price : parseInt(value, 10);
+        },
+        ttc: function () { return this.valid() ? finalPrice(this.reference(), info.percents) : null; },
+        ht: function () { var ttc = this.ttc(); return ttc === null ? null : splitVat(ttc, data.vat_rate)[0]; },
+        vat: function () { var ttc = this.ttc(); return ttc === null ? null : splitVat(ttc, data.vat_rate)[1]; },
+        money: function (value) { return value === null ? "—" : formatMoney(value, data.symbol); }
+      };
+    });
+  });
+})();
+
+// ============================================================ numérisation des pièces d'identité
+// Bloc autonome (composant Alpine « idScanner », partiel templates/pms/_id_scan.html) : douchette MRZ avec
+// détection globale de la saisie très rapide, téléversement PNG / JPG / PDF, photo webcam, vérification puis
+// création ou mise à jour de la fiche client. Configuration et libellés traduits : bloc JSON #id-scan-config.
+(function () {
+  "use strict";
+
+  var GAP_MS = 60;          // intervalle maximal entre deux touches d'une douchette (un humain tape bien plus lentement)
+  var IDLE_MS = 220;        // fin de lecture : aucune touche pendant ce délai
+  var MIN_MRZ_CHARS = 56;   // 2 × 36 (TD2) moins une marge de lecture
+
+  var csrf = function () {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute("content") : "";
+  };
+  var readConfig = function () {
+    var node = document.getElementById("id-scan-config");
+    if (!node) return {};
+    try { return JSON.parse(node.textContent || "{}") || {}; } catch (e) { return {}; }
+  };
+  var cleanMrz = function (text) {
+    return String(text || "").toUpperCase().replace(/[«‹〈＜]/g, "<").replace(/[^A-Z0-9<\n]/g, "");
+  };
+  // Motif MRZ : au moins une ligne longue faite de A-Z, 0-9 et « < », avec du remplissage « << ».
+  var looksLikeMrz = function (text) {
+    var flat = cleanMrz(text).replace(/\n/g, "");
+    return flat.length >= MIN_MRZ_CHARS && flat.indexOf("<<") !== -1 && /^[PIACVD]/.test(flat);
+  };
+  var isField = function (el) {
+    return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+  };
+  var BLANK = { last_name: "", first_name: "", last_name_ar: "", first_name_ar: "", birth_date: "", birth_place: "",
+                gender: "", nationality: "", id_type: "cni", id_number: "", id_expiry_date: "", id_issue_date: "",
+                id_issue_place: "" };
+  var FORMAT_LABELS = { td1: "MRZ TD1 (3 × 30)", td2: "MRZ TD2 (2 × 36)", td3: "MRZ TD3 (2 × 44)",
+                        aamva: "PDF417 AAMVA", json: "QR / JSON", cles: "QR / PDF417", texte: "OCR" };
+
+  document.addEventListener("alpine:init", function () {
+    window.Alpine.data("idScanner", function () {
+      var cfg = readConfig();
+      var msg = cfg.messages || {};
+      return {
+        cfg: cfg, isOpen: false, tab: "mrz", step: "capture", busy: false, error: "", info: "",
+        mrzText: "", side: "recto", file: null, fileSource: "image_upload", fileName: "", previewUrl: "",
+        previewIsPdf: false, camera: { active: false, stream: null },
+        status: { loaded: false, tesseract: true, pdf: true },
+        result: null, fields: Object.assign({}, BLANK, cfg.guest_fields || {}), warnings: [], notes: [], scanIds: [], files: [],
+        applied: null, burst: null,
+
+        init: function () {
+          var self = this;
+          // Écouteur global (phase de capture) : une rafale de touches très rapides qui forme une MRZ est
+          // interceptée, même hors du champ de capture et même fenêtre fermée ; la touche Entrée envoyée par la
+          // douchette ne soumet alors aucun formulaire et ne déclenche pas la recherche universelle.
+          document.addEventListener("keydown", function (event) { self.onKey(event); }, true);
+          window.addEventListener("beforeunload", function () { self.stopCamera(); self.clearPreview(); });
+        },
+
+        // ---------------------------------------------------------------- détection de la douchette
+        onKey: function (event) {
+          if (event.ctrlKey || event.altKey || event.metaKey) return;
+          var now = performance.now();
+          var b = this.burst;
+          if (!b || now - b.last > GAP_MS) {
+            b = this.burst = { text: "", last: now, keys: 0, target: event.target,
+                               saved: isField(event.target) ? event.target.value : null, timer: null };
+          }
+          b.last = now;
+          if (event.key === "Enter") {
+            var line = b.text.split("\n").pop();
+            if (b.keys >= 20 && cleanMrz(line).length >= 28 && line.indexOf("<") !== -1) {
+              event.preventDefault();
+              event.stopImmediatePropagation();
+              b.text += "\n";
+            }
+          } else if (event.key && event.key.length === 1) {
+            b.text += event.key;
+            b.keys += 1;
+          } else {
+            return;
+          }
+          var self = this;
+          window.clearTimeout(b.timer);
+          b.timer = window.setTimeout(function () { self.finishBurst(b); }, IDLE_MS);
+        },
+        finishBurst: function (b) {
+          if (this.burst === b) this.burst = null;
+          if (b.keys < 40 || !looksLikeMrz(b.text)) return;
+          // Saisie tombée dans un autre champ de la page : on lui rend sa valeur d'origine.
+          if (isField(b.target) && b.target !== this.$refs.capture && b.saved !== null) {
+            b.target.value = b.saved;
+            b.target.dispatchEvent(new Event("input", { bubbles: true }));
+          }
+          var text = cleanMrz(b.text).replace(/\n+$/, "");
+          if (!this.isOpen) this.open("mrz");
+          this.tab = "mrz";
+          this.step = "capture";
+          this.mrzText = text;
+          this.info = msg.detected || "";
+          this.analyseMrz(text);
+        },
+
+        // ---------------------------------------------------------------- fenêtre
+        open: function (tab) {
+          this.reset();
+          this.isOpen = true;
+          this.switchTab(tab || "mrz");
+          this.loadStatus();
+        },
+        close: function () {
+          this.stopCamera();
+          this.isOpen = false;
+        },
+        finish: function () {
+          var reload = this.applied && this.cfg.context !== "new";
+          this.close();
+          if (reload) window.location.reload();
+        },
+        reset: function () {
+          this.stopCamera();
+          this.clearPreview();
+          this.tab = "mrz"; this.step = "capture"; this.busy = false; this.error = ""; this.info = "";
+          this.mrzText = ""; this.side = "recto"; this.result = null;
+          this.fields = Object.assign({}, BLANK, this.cfg.guest_fields || {});
+          this.warnings = []; this.notes = []; this.scanIds = []; this.files = []; this.applied = null;
+        },
+        restart: function () { this.reset(); this.focusCapture(); },
+        switchTab: function (tab) {
+          this.tab = tab;
+          this.error = "";
+          if (tab !== "photo") this.stopCamera();
+          if (tab === "mrz") this.focusCapture();
+        },
+        focusCapture: function () {
+          var self = this;
+          this.$nextTick(function () { if (self.$refs.capture) self.$refs.capture.focus(); });
+        },
+        manual: function () {
+          this.stopCamera();
+          this.error = "";
+          this.result = null;
+          this.step = "verify";
+        },
+        addOtherSide: function () {
+          this.side = this.side === "recto" ? "verso" : "recto";
+          this.step = "capture";
+          this.info = "";
+          this.error = "";
+          this.clearPreview();
+          this.switchTab(this.tab);
+        },
+        loadStatus: async function () {
+          if (this.status.loaded) return;
+          try {
+            var response = await fetch("/api/id-scan/status", { headers: { Accept: "application/json" } });
+            var data = await response.json();
+            this.status = { loaded: true, tesseract: !!data.tesseract, pdf: !!data.pdf };
+            if (data.max_bytes) this.cfg.max_bytes = data.max_bytes;
+          } catch (e) {
+            this.status = { loaded: true, tesseract: false, pdf: false };
+          }
+        },
+
+        // ---------------------------------------------------------------- échanges avec le serveur
+        request: async function (url, options) {
+          options.headers = Object.assign({ Accept: "application/json", "X-CSRF-Token": csrf() }, options.headers || {});
+          options.credentials = "same-origin";
+          var response;
+          try {
+            response = await fetch(url, options);
+          } catch (e) {
+            return { ok: false, message: msg.network };
+          }
+          var data = null;
+          try { data = await response.json(); } catch (e) { data = null; }
+          if (!data) return { ok: false, message: response.status === 403 ? msg.session : msg.network };
+          if (!response.ok && data.ok === undefined) data.ok = false;
+          if (!data.ok && !data.message) data.message = response.status === 403 ? msg.session : msg.network;
+          return data;
+        },
+        receive: function (data) {
+          var result = data.result;
+          if (data.scan_id && this.scanIds.indexOf(data.scan_id) === -1) this.scanIds.push(data.scan_id);
+          if (data.file_url) {
+            this.files.push({ url: data.file_url, image: String(data.mime_type || "").indexOf("image/") === 0,
+                              sideLabel: msg[this.side] || this.side });
+          }
+          if (!result) return;
+          this.result = result;
+          // La première lecture remplace les valeurs de la fiche existante ; une lecture suivante (autre face) ne
+          // complète que les champs encore vides, sans écraser ce que la réception a déjà vérifié ou corrigé.
+          var self = this;
+          var first = this.scanIds.length <= 1;
+          Object.keys(BLANK).forEach(function (key) {
+            var value = (result.fields || {})[key];
+            if (value && (first || !self.fields[key] || self.fields[key] === BLANK[key])) self.fields[key] = value;
+          });
+          (result.warnings || []).forEach(function (w) { if (self.warnings.indexOf(w) === -1) self.warnings.push(w); });
+          (result.notes || []).forEach(function (n) { if (self.notes.indexOf(n) === -1) self.notes.push(n); });
+          this.step = "verify";
+        },
+        analyseMrz: async function (text) {
+          if (!cleanMrz(text).replace(/\n/g, "").length) { this.error = msg.empty; return; }
+          this.busy = true;
+          this.error = "";
+          var data = await this.request("/api/id-scan/mrz", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: text, reservation_id: this.cfg.reservation_id, guest_id: this.cfg.guest_id })
+          });
+          this.busy = false;
+          this.info = "";
+          if (!data.ok) { this.error = data.message; return; }
+          this.receive(data);
+        },
+
+        // ---------------------------------------------------------------- fichier et caméra
+        clearPreview: function () {
+          if (this.previewUrl) URL.revokeObjectURL(this.previewUrl);
+          this.previewUrl = ""; this.previewIsPdf = false; this.fileName = ""; this.file = null;
+          if (this.$refs && this.$refs.file) this.$refs.file.value = "";
+        },
+        setFile: function (file, source) {
+          this.clearPreview();
+          this.error = "";
+          if (!file) return;
+          if (["image/png", "image/jpeg", "application/pdf"].indexOf(file.type) === -1) { this.error = msg.bad_type; return; }
+          if (file.size > (this.cfg.max_bytes || 8388608)) { this.error = msg.too_big; return; }
+          this.file = file;
+          this.fileSource = source;
+          this.fileName = file.name || "";
+          this.previewIsPdf = file.type === "application/pdf";
+          if (!this.previewIsPdf) this.previewUrl = URL.createObjectURL(file);
+        },
+        pickFile: function (event) {
+          var input = event.target;
+          this.setFile(input.files && input.files[0], "image_upload");
+          if (!this.file) input.value = "";
+        },
+        startCamera: async function () {
+          this.error = "";
+          if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            this.error = msg.camera_insecure;
+            return;
+          }
+          try {
+            var stream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false
+            });
+            this.camera.stream = stream;
+            this.camera.active = true;
+            var self = this;
+            this.$nextTick(function () { if (self.$refs.video) self.$refs.video.srcObject = stream; });
+          } catch (e) {
+            var name = e && e.name;
+            this.error = (name === "NotAllowedError" || name === "SecurityError") ? msg.camera_denied
+              : (name === "NotFoundError" || name === "OverconstrainedError") ? msg.camera_missing : msg.camera_error;
+          }
+        },
+        stopCamera: function () {
+          if (this.camera.stream) this.camera.stream.getTracks().forEach(function (track) { track.stop(); });
+          this.camera.stream = null;
+          this.camera.active = false;
+          if (this.$refs && this.$refs.video) this.$refs.video.srcObject = null;
+        },
+        capturePhoto: function () {
+          var video = this.$refs.video;
+          if (!video || !video.videoWidth) return;
+          var canvas = document.createElement("canvas");
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+          var self = this;
+          canvas.toBlob(function (blob) {
+            if (!blob) { self.error = msg.camera_error; return; }
+            self.setFile(new File([blob], "webcam-" + self.side + ".jpg", { type: "image/jpeg" }), "webcam");
+            self.stopCamera();
+          }, "image/jpeg", 0.92);
+        },
+        upload: async function () {
+          if (!this.file) { this.error = msg.no_file; return; }
+          var form = new FormData();
+          form.append("file", this.file, this.fileName || "piece.jpg");
+          form.append("source", this.fileSource);
+          form.append("side", this.side);
+          form.append("csrf_token", csrf());
+          if (this.cfg.reservation_id) form.append("reservation_id", this.cfg.reservation_id);
+          if (this.cfg.guest_id) form.append("guest_id", this.cfg.guest_id);
+          this.busy = true;
+          this.error = "";
+          var data = await this.request("/api/id-scan/upload", { method: "POST", body: form });
+          this.busy = false;
+          if (!data.ok) { this.error = data.message; return; }
+          this.clearPreview();
+          this.receive(data);
+          if (data.result && data.result.status === "failed" && data.result.message) this.info = data.result.message;
+        },
+
+        // ---------------------------------------------------------------- vérification et validation
+        get expired() {
+          return !!this.fields.id_expiry_date && !!this.cfg.today && this.fields.id_expiry_date < this.cfg.today;
+        },
+        get formatLabel() {
+          return this.result ? (FORMAT_LABELS[this.result.format] || this.result.format) : "";
+        },
+        apply: async function () {
+          this.busy = true;
+          this.error = "";
+          var data = await this.request("/api/id-scan/apply", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ fields: this.fields, scan_ids: this.scanIds,
+                                   reservation_id: this.cfg.reservation_id, guest_id: this.cfg.guest_id })
+          });
+          this.busy = false;
+          if (!data.ok) { this.error = data.message; return; }
+          this.applied = data;
+          if (this.cfg.context === "new") {
+            data.message = (data.message || "") + " " + (msg.applied_new || "");
+            window.dispatchEvent(new CustomEvent("id-scan-applied", { detail: data.guest }));
+          }
+          this.step = "done";
+        }
+      };
+    });
+  });
+})();

@@ -1,5 +1,5 @@
 <nav class="no-print flex flex-wrap gap-2">
-  {% for href, label, ic in [('/admin', 'Paramètres', 'cog'), ('/admin/rooms', 'Chambres & types', 'building'), ('/admin/rates', 'Tarifs saisonniers', 'calendar'), ('/admin/modules', 'Modules annexes', 'bag'), ('/admin/users', 'Utilisateurs', 'users'), ('/admin/backups', 'Sauvegardes', 'archive'), ('/admin/audit-log', "Journal d'activité", 'clock'), ('/admin/ota', 'Channel manager OTA', 'swap'), ('/admin/theme', 'Thème et marque', 'sparkles'), ('/activate', 'Licence', 'shield')] %}
+  {% for href, label, ic in [('/admin', 'Paramètres', 'cog'), ('/admin/rooms', 'Chambres & types', 'building'), ('/admin/rates', 'Tarifs saisonniers', 'calendar'), ('/admin/pricing', 'Gestion des tarifs', 'cash'), ('/admin/modules', 'Modules annexes', 'bag'), ('/admin/users', 'Utilisateurs', 'users'), ('/admin/backups', 'Sauvegardes', 'archive'), ('/admin/audit-log', "Journal d'activité", 'clock'), ('/admin/ota', 'Channel manager OTA', 'swap'), ('/admin/theme', 'Thème et marque', 'sparkles'), ('/activate', 'Licence', 'shield')] %}
     <a href="{{ href }}" class="{{ 'btn-primary' if current_path == href else 'btn-secondary' }} btn-sm">{{ icon(ic, 'h-4 w-4') }} {{ label|tr }}</a>
   {% endfor %}
 </nav>

@@ -31,7 +31,7 @@ from app.database import run_migrations
 from app.models.backup import BACKUP_DESTINATIONS, BackupJob
 from app.models.user import User
 from app.services import backup
-from app.services import theme_manager
+from app.services import ocr_service, theme_manager
 from app.services.audit_log import log_action
 from app.services.common import BusinessError
 from app.services.settings import HotelSettings, now_of
@@ -223,11 +223,14 @@ def extract_database(archive: Path, target_dir: Path) -> Path:
 
 
 def extract_branding(archive: Path) -> list[str]:
-    """Restaure les fichiers de marque (logo, favicon) de l'archive : la base restaurée y fait référence."""
+    """Restaure les fichiers de marque (logo, favicon) et les pièces d'identité numérisées de l'archive :
+    la base restaurée y fait référence. Renvoie les fichiers de marque restaurés."""
     if not zipfile.is_zipfile(archive):
         return []
     with zipfile.ZipFile(archive) as zf:
-        return theme_manager.restore_branding_files(zf, MEDIA_PREFIX)
+        restored = theme_manager.restore_branding_files(zf, MEDIA_PREFIX)
+        ocr_service.restore_scan_files(zf, MEDIA_PREFIX)
+    return restored
 
 
 def upload_target(filename: str) -> Path:

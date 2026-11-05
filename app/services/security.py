@@ -126,7 +126,8 @@ class SecurityHeadersMiddleware:
                     b"x-content-type-options": b"nosniff",
                     b"x-frame-options": b"SAMEORIGIN",
                     b"referrer-policy": b"same-origin",
-                    b"permissions-policy": b"camera=(), microphone=(), geolocation=()",
+                    # Caméra autorisée pour l'application elle-même (photo webcam des pièces d'identité).
+                    b"permissions-policy": b"camera=(self), microphone=(), geolocation=()",
                     b"content-security-policy": CONTENT_SECURITY_POLICY.encode(),
                 }
                 for name, value in extra.items():

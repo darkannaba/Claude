@@ -8,6 +8,7 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.booking import Reservation
+from app.models.id_scan import IdScan
 from app.models.customer import GENDERS, GUEST_STATUSES, ID_TYPES, Guest, normalize_id_number
 from app.models.invoice import Invoice
 from app.models.pos import PosOrder
@@ -61,6 +62,8 @@ async def save_guest(db: AsyncSession, guest: Guest | None, data: dict, hs: Hote
     guest.id_number_norm = normalize_id_number(clean["id_number"])
     guest.birth_date = data.get("birth_date")
     guest.id_issue_date = data.get("id_issue_date")
+    if "id_expiry_date" in data:  # absent des formulaires sans ce champ (réservation rapide) : valeur conservée
+        guest.id_expiry_date = data.get("id_expiry_date")
     guest.company_id = data.get("company_id")
     if "nationality" in data and not clean["nationality"]:
         guest.nationality = "Algérienne"
@@ -110,7 +113,9 @@ async def merge_guests(db: AsyncSession, keep: Guest, remove: Guest, hs: HotelSe
     if keep.id == remove.id:
         raise BusinessError("Impossible de fusionner une fiche avec elle-même.")
     await db.execute(update(Reservation).where(Reservation.guest_id == remove.id).values(guest_id=keep.id))
-    for name in GUEST_TEXT_FIELDS + ("birth_date", "id_issue_date", "company_id", "gender"):
+    await db.execute(update(IdScan).where(IdScan.guest_id == remove.id).values(guest_id=keep.id))
+    for name in GUEST_TEXT_FIELDS + ("birth_date", "id_issue_date", "id_expiry_date", "company_id", "gender",
+                                     "id_scan_path", "id_scan_back_path", "id_scanned_at"):
         if not getattr(keep, name) and getattr(remove, name):
             setattr(keep, name, getattr(remove, name))
     if not keep.id_number_norm and remove.id_number_norm:

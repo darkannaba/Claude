@@ -79,12 +79,13 @@ def build_folio(res: Reservation, hs: HotelSettings, calendar: RateCalendar | No
         for seg in res.segments:
             night = seg.start_date
             while night < seg.end_date:
+                # Seules les nuits NON postées sont projetées au tarif courant : une nuit figée par l'audit
+                # de nuit (night_key) garde son montant quel que soit le changement de tarif ultérieur.
                 if room_key(res.id, night) not in posted_keys:
+                    price = calendar.night_price(res, seg, night)
                     if res.nightly_rate_override is not None:
-                        price = res.nightly_rate_override
                         label = f"Nuitée {night:%d/%m/%Y} – Chambre {seg.room.number} – tarif {res.channel} (prévisionnel)"
                     else:
-                        price = calendar.price(seg.room.room_type, night, res.company)
                         label = f"Nuitée {night:%d/%m/%Y} – Chambre {seg.room.number} (prévisionnel)"
                     folio.lines.append(FolioLine(
                         night, "room", label,

@@ -23,7 +23,9 @@ from app.database import SessionLocal
 from app.deps import AccessDenied, CsrfError, LoginRequired, PasswordChangeRequired, csrf_protect
 from app.middlewares.language import LanguageMiddleware
 from app.middlewares.license_checker import LicenseCheckerMiddleware
-from app.routers import admin, auth, backup, crm, housekeeping, i18n, licensing, ota_channel, pms, pos, reports, theme
+from app.routers import (
+    admin, auth, backup, crm, housekeeping, i18n, id_scan, licensing, ota_channel, pms, pos, reports, theme,
+)
 from app.services import scheduler, theme_manager
 from app.services.security import SecurityHeadersMiddleware
 from app.services.seed import bootstrap, print_created_users
@@ -91,6 +93,7 @@ def create_app() -> FastAPI:
     app.include_router(backup.router)
     app.include_router(i18n.router)
     app.include_router(theme.router)
+    app.include_router(id_scan.router)  # pièces d'identité : douchette MRZ, OCR, fichiers authentifiés
     app.include_router(ota_channel.api)
     app.include_router(ota_channel.admin)
 

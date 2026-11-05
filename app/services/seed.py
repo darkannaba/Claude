@@ -14,6 +14,7 @@ from app.models.pos import PosItem
 from app.models.room import Room, RoomType
 from app.models.system import FeatureFlag
 from app.models.user import User
+from app.services.pricing_admin import ensure_pricing_defaults
 from app.services.security import hash_password
 from app.services.settings import load_hotel_settings, seed_modules, seed_settings, today_of
 
@@ -50,6 +51,9 @@ async def seed_reference_data(db: AsyncSession) -> None:
             for number in numbers:
                 db.add(Room(number=number, floor=floor, room_type_id=types[code].id, status="available"))
     await db.flush()
+    # Tarification dynamique : saisons d'exemple (inactives) créées une seule fois, gérées ensuite dans
+    # Administration > Gestion des tarifs.
+    await ensure_pricing_defaults(db)
 
 
 async def create_default_users(db: AsyncSession) -> list[tuple[str, str]]:

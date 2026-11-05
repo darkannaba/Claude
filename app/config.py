@@ -53,6 +53,12 @@ class AppConfig(BaseSettings):
     license_enforced: bool = True
     license_public_key_file: Path = BASE_DIR / "app" / "license_public_key.pem"
 
+    # OCR des pièces d'identité (facultatif) : chemin du binaire Tesseract s'il n'est pas dans le PATH,
+    # par exemple « C:\\Program Files\\Tesseract-OCR\\tesseract.exe » sous Windows (variable TESSERACT_CMD).
+    # Langues à installer : fra, ara, eng. Sans Tesseract, la lecture MRZ par douchette reste disponible.
+    tesseract_cmd: str = ""
+    id_scan_max_bytes: int = Field(default=8 * 1024 * 1024, ge=100_000, description="Taille maximale d'un scan")
+
     @model_validator(mode="after")
     def _derive_defaults(self) -> "AppConfig":
         self.data_dir.mkdir(parents=True, exist_ok=True)

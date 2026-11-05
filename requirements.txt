@@ -15,3 +15,12 @@ arabic-reshaper>=3.0
 python-bidi>=0.5
 openpyxl>=3.1
 cryptography>=42
+# Images (charte graphique, pièces d'identité numérisées) : validation et réencodage
+pillow>=10.0
+# Lecture des pièces d'identité : OCR facultatif. pytesseract ne fait qu'appeler le binaire Tesseract,
+# à installer séparément AVEC les langues fra, ara et eng (Debian/Ubuntu : apt install tesseract-ocr
+# tesseract-ocr-fra tesseract-ocr-ara ; Windows : installeur UB Mannheim, puis TESSERACT_CMD dans .env).
+# Sans Tesseract, la lecture MRZ par douchette et la saisie manuelle restent disponibles.
+pytesseract>=0.3.10
+# Rendu de la première page des PDF scannés en image (roues avec binaire PDFium intégré)
+pypdfium2>=4.0

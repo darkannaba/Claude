@@ -21,6 +21,7 @@
     <input class="input" name="id_number" value="{{ g.id_number if g else '' }}" autocomplete="off" @change="check($refs.idtype.value, $event.target.value)"></label>
   {{ ui.field('Délivrée le', 'id_issue_date', g.id_issue_date.isoformat() if g and g.id_issue_date else '', type='date') }}
   {{ ui.field('Délivrée à', 'id_issue_place', g.id_issue_place if g else '') }}
+  {{ ui.field("Date d'expiration", 'id_expiry_date', g.id_expiry_date.isoformat() if g and g.id_expiry_date else '', type='date') }}
   <div x-show="duplicate" x-cloak class="flash-warning sm:col-span-2 lg:col-span-4">{{ icon('id', 'h-5 w-5') }}
     <span>{{ _("Doublon : cette pièce appartient déjà à") }} <a :href="duplicate ? '/guests/' + duplicate.id : '#'" class="font-semibold underline" x-text="duplicate && duplicate.name"></a>.</span></div>
   <label class="sm:col-span-2 lg:col-span-4"><span class="label">{{ _("Adresse (domicile habituel)") }}</span><textarea class="input" name="address" rows="2">{{ g.address if g else '' }}</textarea></label>

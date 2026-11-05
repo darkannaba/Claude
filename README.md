@@ -354,3 +354,39 @@ La feuille `GET /static/css/theme-custom.css` est générée à la volée depuis
 `--accent-*`, statuts, police, densité) : la charte s'applique sans recompiler Tailwind. Le texte sur la couleur
 primaire passe automatiquement en blanc ou en foncé selon le contraste. Pour un logo SVG, téléversez aussi une version
 PNG si vous voulez le voir sur les PDF (aucun convertisseur SVG n'est installé).
+
+## 13. Gestion dynamique des tarifs
+
+**Administration > Gestion des tarifs** (`/admin/pricing`, réservé au rôle `admin` ; la réception reçoit 403) :
+- **Grille des 30 chambres** : prix du type, prix spécifique par chambre (ou retour au prix du type), prix final TTC
+  à une date choisie avec décomposition HT / TVA / TTC, recalculé en direct.
+- **Mise à jour rapide** : nouveau prix de base par type, ou +/- % global ou par type, arrondi facultatif à 100 DZD.
+- **Saisons** haute / moyenne / basse (ajustement en %, dates, priorité, type facultatif), **paliers long séjour**
+  (remise selon le nombre de nuits) et **majoration week-end** (jours et %). La remise entreprise reste sur la fiche
+  de l'entreprise. Simulateur de séjour (détail par nuit et total).
+- Chaque modification est tracée (`price_changes` + journal d'audit).
+
+Ordre de calcul d'une nuit : prix négocié de la réservation (appliqué tel quel) > prix de la chambre > tarif
+saisonnier fixe > prix du type ; puis saison, week-end, long séjour, entreprise ; arrondi au dinar à la fin.
+**Immuabilité** : les nuitées déjà postées par l'audit de nuit et les factures émises ne sont jamais recalculées ; un
+nouveau tarif ne s'applique qu'aux nouvelles réservations et aux nuits non clôturées.
+
+## 14. Scan des pièces d'identité (MRZ / OCR) et fiche de police
+
+Bouton **« Numériser la pièce d'identité »** sur le formulaire de nouvelle réservation et sur la fiche de réservation
+(check-in) :
+- **Douchette / lecteur MRZ USB** : une saisie rapide reconnue comme MRZ (passeport TD3, CNI TD1 dont la CNI
+  biométrique algérienne, TD2) est détectée même hors champ ; sommes de contrôle ICAO vérifiées ; nom, prénom,
+  naissance, sexe, nationalité, type et n° de pièce, expiration remplis instantanément. Codes-barres PDF417 (AAMVA) et
+  QR structurés acceptés. La date de délivrance n'est pas dans la MRZ : elle reste à saisir.
+- **Image** : téléversement PNG / JPG / PDF ou capture webcam (HTTPS ou localhost obligatoire pour la caméra).
+  L'OCR utilise **Tesseract** s'il est installé (langues `fra`, `ara`, `eng` ; chemin réglable par `TESSERACT_CMD`
+  dans `.env`) ; sans lui, le fichier est archivé et la saisie reste manuelle.
+- Après vérification, **« Valider »** crée ou complète le client CRM (dédoublonnage par pièce) ; les données passent
+  automatiquement dans la **fiche de police** PDF français / arabe (expiration et date de numérisation incluses).
+- Les scans sont stockés dans `data/media/id_scans/<client>/` (noms aléatoires, EXIF/GPS supprimés, 8 Mo max),
+  servis uniquement aux utilisateurs connectés, journalisés dans `id_scans`, et inclus dans les sauvegardes.
+
+Installation de Tesseract : Windows – installeur « Tesseract OCR » (UB Mannheim) avec les langues française et arabe,
+puis `TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe` ; Linux – `apt install tesseract-ocr
+tesseract-ocr-fra tesseract-ocr-ara`.

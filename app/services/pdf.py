@@ -542,6 +542,18 @@ def _person_block(doc: _Doc, person, is_guest: bool, width: float) -> Table:
          doc.bi("Pièce d'identité"), doc.P(_id_type_label(doc, person.id_type))],
         [doc.bi("N° de la pièce"), doc.P(person.id_number, "bold"), doc.bi("Délivrée le / à"), doc.P(issue)],
     ]
+    # Date d'expiration de la pièce et mention de numérisation (lecture MRZ / OCR validée à l'accueil).
+    expiry = getattr(person, "id_expiry_date", None)
+    scanned_at = getattr(person, "id_scanned_at", None)
+    if is_guest or expiry:
+        scanned = ""
+        if scanned_at:
+            stamp = f"{scanned_at:%d/%m/%Y %H:%M}"
+            scanned = doc.t("Pièce numérisée le {date}", date=stamp)
+            if doc.bilingual:  # français puis arabe, une ligne chacun
+                scanned += "\n" + t("Pièce numérisée le {date}", "ar").format(date=stamp)
+        rows.append([doc.bi("Date d'expiration"), doc.P(d(expiry), "bold"),
+                     doc.bi("Numérisation") if scanned_at else "", doc.P(scanned) if scanned else ""])
     if is_guest:
         rows += [
             [doc.bi("Sexe"), doc.P(doc.dyn(GENDERS.get(person.gender, ""))), doc.bi("Profession"), doc.P(person.profession)],

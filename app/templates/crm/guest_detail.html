@@ -10,7 +10,10 @@
       {{ ui.guest_badge(guest) }}</h1>
     <p class="page-subtitle">{{ _("Client depuis le") }} {{ guest.created_at|date }}</p>
   </div>
-  <a class="btn-primary" href="/reservations/new?guest_id={{ guest.id }}">{{ icon('plus', 'h-4 w-4') }} {{ _("Nouvelle réservation") }}</a>
+  <div class="flex flex-wrap items-center gap-2">
+    {% with scan_context='guest', scan_reservation=None, scan_guest=guest, scan_button_class='btn-secondary' %}{% include "pms/_id_scan.html" %}{% endwith %}
+    <a class="btn-primary" href="/reservations/new?guest_id={{ guest.id }}">{{ icon('plus', 'h-4 w-4') }} {{ _("Nouvelle réservation") }}</a>
+  </div>
 </div>
 {{ ui.alerts_list(alerts) }}
 <section class="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -37,6 +40,36 @@
         <button class="btn-secondary btn-sm">{{ _("Mettre à jour") }}</button>
         <p class="help">{{ _("La liste noire est réservée à l'administrateur et bloque les réservations et arrivées.") }}</p>
       </form>
+    </section>
+    <section class="card">
+      <div class="card-title">{{ icon('id', 'h-4 w-4') }} {{ _("Pièce numérisée") }}</div>
+      {% if guest.has_id_scan or guest.id_scanned_at %}
+        <div class="grid grid-cols-2 gap-3">
+          {% for side, path in (('recto', guest.id_scan_path), ('verso', guest.id_scan_back_path)) if path %}
+          <div class="space-y-1">
+            <a href="/guests/{{ guest.id }}/id-scan/{{ side }}" target="_blank" rel="noopener" class="block overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900">
+              {% if path.endswith('.pdf') %}
+                <span class="flex h-24 items-center justify-center gap-1 text-sm text-slate-500">{{ icon('document', 'h-5 w-5') }} PDF</span>
+              {% else %}
+                <img src="/guests/{{ guest.id }}/id-scan/{{ side }}" alt="{{ _('Pièce numérisée') }} – {{ side|capitalize|tr }}" class="h-24 w-full object-contain" loading="lazy">
+              {% endif %}
+            </a>
+            <form method="post" action="/guests/{{ guest.id }}/id-scan/{{ side }}/delete" class="flex items-center justify-between gap-1 text-xs"
+                  data-confirm="{{ _('Supprimer ce scan de la pièce d\'identité ?') }}">{{ ui.csrf() }}
+              <span class="text-slate-500">{{ side|capitalize|tr }}</span>
+              <button class="text-rose-600 hover:underline dark:text-rose-400" aria-label="{{ _('Supprimer') }}">{{ icon('trash', 'h-3.5 w-3.5') }}</button>
+            </form>
+          </div>
+          {% endfor %}
+        </div>
+        {% if guest.id_scanned_at %}<p class="help mt-2">{{ _("Pièce numérisée le") }} {{ guest.id_scanned_at|dt }}</p>{% endif %}
+      {% else %}
+        <p class="text-sm text-slate-500">{{ _("Aucune pièce numérisée pour ce client.") }}</p>
+      {% endif %}
+      {% if guest.id_expiry_date %}
+        <p class="mt-2 text-sm {{ 'font-semibold text-rose-600 dark:text-rose-400' if guest.id_expired_on(today) else 'text-slate-500' }}">
+          {{ _("Expire le") }} {{ guest.id_expiry_date|date }}{% if guest.id_expired_on(today) %} · {{ _("Document expiré") }}{% endif %}</p>
+      {% endif %}
     </section>
     <section class="card">
       <div class="card-title">{{ icon('clock', 'h-4 w-4') }} {{ _("Historique des séjours") }}</div>

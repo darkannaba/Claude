@@ -32,6 +32,7 @@ def _guest_form(form) -> dict:
         "id_type": get("id_type") or "cni", "id_number": get("id_number"),
         "id_issue_date": to_date(get("id_issue_date"), "Date de délivrance", required=False),
         "id_issue_place": get("id_issue_place"),
+        "id_expiry_date": to_date(get("id_expiry_date"), "Date d'expiration", required=False),
         "company_id": int(company_id) if company_id.isdigit() else None,
         "preferences": get("preferences"), "notes": get("notes"),
     }

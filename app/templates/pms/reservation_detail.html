@@ -13,7 +13,10 @@
     </h1>
     <p class="page-subtitle">{{ _("Chambre") }} <strong>{{ res.room.number }}</strong> ({{ res.room_type.name }}) · {{ _("du") }} {{ res.check_in|date }} {{ _("au") }} {{ res.check_out|date }} · {{ res.nights }} {{ _("nuit(s)") }} · {{ res.adults }} {{ _("adulte(s)") }}, {{ res.children }} {{ _("enfant(s)") }}{% if res.company %} · {{ res.company.name }} (−{{ res.company.discount_percent }} %){% endif %}</p>
   </div>
-  <div class="flex flex-wrap gap-2 no-print">
+  <div class="flex flex-wrap items-center gap-2 no-print">
+    {% if res.status in ('confirmed', 'checked_in') %}
+      {% with scan_context='checkin', scan_reservation=res, scan_guest=None, scan_button_class='btn-secondary' %}{% include "pms/_id_scan.html" %}{% endwith %}
+    {% endif %}
     {% if res.status == 'confirmed' and today >= res.check_in %}
       <form method="post" action="/reservations/{{ res.id }}/checkin" class="flex items-center gap-2">{{ ui.csrf() }}
         {% if user.role == 'admin' and res.guest.is_blacklisted %}<label class="flex items-center gap-1 text-xs"><input class="checkbox" type="checkbox" name="override" value="1"> {{ _("forcer") }}</label>{% endif %}
@@ -31,7 +34,7 @@
 {{ ui.alerts_list(alerts) }}
 
 <div class="grid gap-5 xl:grid-cols-3">
-  <div class="space-y-5 xl:col-span-2">
+  <div class="min-w-0 space-y-5 xl:col-span-2">
 
     <section class="card">
       <div class="card-title">{{ icon('cash', 'h-4 w-4') }} {{ _("Folio") }}
@@ -177,7 +180,7 @@
     {% endif %}
   </div>
 
-  <aside class="space-y-5">
+  <aside class="min-w-0 space-y-5">
     <section class="card">
       <div class="card-title">{{ icon('chart', 'h-4 w-4') }} {{ _("Résumé") }}</div>
       <dl class="space-y-2 text-sm">
@@ -249,6 +252,11 @@
         <div><a href="/guests/{{ res.guest.id }}" class="font-semibold">{{ res.guest.full_name }}</a></div>
         <div class="text-slate-500">{{ res.guest.phone or _("Téléphone non renseigné") }}</div>
         <div class="text-slate-500">{{ res.guest.id_type_label|tr }} : {{ res.guest.id_number or _("non renseignée") }}</div>
+        {% if res.guest.id_expiry_date %}
+        <div class="{{ 'font-semibold text-rose-600 dark:text-rose-400' if res.guest.id_expired_on(today) else 'text-slate-500' }}">
+          {{ _("Expire le") }} {{ res.guest.id_expiry_date|date }}{% if res.guest.id_expired_on(today) %} · {{ _("Document expiré") }}{% endif %}</div>
+        {% endif %}
+        {% if res.guest.id_scanned_at %}<div class="text-xs text-slate-500">{{ icon('id', 'inline h-3.5 w-3.5') }} {{ _("Pièce numérisée le") }} {{ res.guest.id_scanned_at|dt }}</div>{% endif %}
         <div class="text-slate-500">{{ res.guest.nationality }}</div>
       </div>
       <form method="post" action="/reservations/{{ res.id }}/details" class="mt-4 space-y-3 border-t border-slate-200 pt-4 no-print dark:border-slate-800">

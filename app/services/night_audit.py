@@ -37,11 +37,12 @@ def post_night(res: Reservation, segment, night: date, calendar: RateCalendar, h
     rkey = room_key(res.id, night)
     if rkey not in keys:
         posted = True
+        # Prix calculé une seule fois puis FIGÉ dans folio_items (voir l'ordre de calcul dans app/services/pricing.py) :
+        # prix négocié de la réservation, sinon prix de la chambre / tarif / prix de base + saison, week-end, remises.
+        price = calendar.night_price(res, segment, night)
         if res.nightly_rate_override is not None:  # tarif négocié par le canal OTA
-            price = res.nightly_rate_override
             label = f"Nuitée {night:%d/%m/%Y} – Chambre {segment.room.number} – tarif {res.channel}"
         else:
-            price = calendar.price(segment.room.room_type, night, res.company)
             label = f"Nuitée {night:%d/%m/%Y} – Chambre {segment.room.number} ({segment.room.room_type.name})"
         res.folio_items.append(FolioItem(
             business_date=night, kind="room",

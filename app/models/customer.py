@@ -67,6 +67,11 @@ class Guest(Base):
     id_number_norm: Mapped[str] = mapped_column(String(60), default="", index=True)
     id_issue_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     id_issue_place: Mapped[str] = mapped_column(String(120), default="")
+    id_expiry_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Pièce numérisée : chemins RELATIFS à data/media (ex. « id_scans/12/3f…a9.jpg »), jamais servis par /static.
+    id_scan_path: Mapped[str] = mapped_column(String(255), default="")
+    id_scan_back_path: Mapped[str] = mapped_column(String(255), default="")
+    id_scanned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id", ondelete="SET NULL"), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="normal", index=True)
     status_reason: Mapped[str] = mapped_column(Text, default="")
@@ -88,6 +93,14 @@ class Guest(Base):
     @property
     def id_type_label(self) -> str:
         return ID_TYPES.get(self.id_type, self.id_type)
+
+    @property
+    def has_id_scan(self) -> bool:
+        return bool(self.id_scan_path or self.id_scan_back_path)
+
+    def id_expired_on(self, day: date) -> bool:
+        """Vrai si la pièce d'identité est expirée à la date indiquée."""
+        return self.id_expiry_date is not None and self.id_expiry_date < day
 
     @property
     def is_vip(self) -> bool:
