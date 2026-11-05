@@ -6,24 +6,24 @@
   {{ ui.field('Prénom', 'first_name', g.first_name if g else '', required=true) }}
   {{ ui.field('Nom (arabe)', 'last_name_ar', g.last_name_ar if g else '', extra='dir="rtl"') }}
   {{ ui.field('Prénom (arabe)', 'first_name_ar', g.first_name_ar if g else '', extra='dir="rtl"') }}
-  <label><span class="label">Sexe</span><select class="input" name="gender">{% for k, l in GENDERS.items() %}<option value="{{ k }}" {{ 'selected' if g and g.gender == k }}>{{ l }}</option>{% endfor %}</select></label>
+  <label><span class="label">{{ _("Sexe") }}</span><select class="input" name="gender">{% for k, l in GENDERS.items() %}<option value="{{ k }}" {{ 'selected' if g and g.gender == k }}>{{ l|tr }}</option>{% endfor %}</select></label>
   {{ ui.field('Date de naissance', 'birth_date', g.birth_date.isoformat() if g and g.birth_date else '', type='date') }}
   {{ ui.field('Lieu de naissance', 'birth_place', g.birth_place if g else '') }}
   {{ ui.field('Nationalité', 'nationality', g.nationality if g else 'Algérienne') }}
   {{ ui.field('Profession', 'profession', g.profession if g else '') }}
   {{ ui.field('Téléphone', 'phone', g.phone if g else '', type='tel') }}
   {{ ui.field('Email', 'email', g.email if g else '', type='email') }}
-  <label><span class="label">Entreprise</span><select class="input" name="company_id"><option value="">Aucune</option>
+  <label><span class="label">{{ _("Entreprise") }}</span><select class="input" name="company_id"><option value="">{{ _("Aucune") }}</option>
     {% for c in companies %}<option value="{{ c.id }}" {{ 'selected' if g and g.company_id == c.id }}>{{ c.name }}</option>{% endfor %}</select></label>
-  <label><span class="label">Type de pièce</span>
-    <select class="input" name="id_type" x-ref="idtype">{% for k, l in ID_TYPES.items() %}<option value="{{ k }}" {{ 'selected' if g and g.id_type == k }}>{{ l }}</option>{% endfor %}</select></label>
-  <label><span class="label">N° de pièce</span>
+  <label><span class="label">{{ _("Type de pièce") }}</span>
+    <select class="input" name="id_type" x-ref="idtype">{% for k, l in ID_TYPES.items() %}<option value="{{ k }}" {{ 'selected' if g and g.id_type == k }}>{{ l|tr }}</option>{% endfor %}</select></label>
+  <label><span class="label">{{ _("N° de pièce") }}</span>
     <input class="input" name="id_number" value="{{ g.id_number if g else '' }}" autocomplete="off" @change="check($refs.idtype.value, $event.target.value)"></label>
   {{ ui.field('Délivrée le', 'id_issue_date', g.id_issue_date.isoformat() if g and g.id_issue_date else '', type='date') }}
   {{ ui.field('Délivrée à', 'id_issue_place', g.id_issue_place if g else '') }}
   <div x-show="duplicate" x-cloak class="flash-warning sm:col-span-2 lg:col-span-4">{{ icon('id', 'h-5 w-5') }}
-    <span>Doublon : cette pièce appartient déjà à <a :href="duplicate ? '/guests/' + duplicate.id : '#'" class="font-semibold underline" x-text="duplicate && duplicate.name"></a>.</span></div>
-  <label class="sm:col-span-2 lg:col-span-4"><span class="label">Adresse (domicile habituel)</span><textarea class="input" name="address" rows="2">{{ g.address if g else '' }}</textarea></label>
-  <label class="sm:col-span-2"><span class="label">Préférences (étage, oreiller, régime…)</span><textarea class="input" name="preferences" rows="2">{{ g.preferences if g else '' }}</textarea></label>
-  <label class="sm:col-span-2"><span class="label">Notes internes</span><textarea class="input" name="notes" rows="2">{{ g.notes if g else '' }}</textarea></label>
+    <span>{{ _("Doublon : cette pièce appartient déjà à") }} <a :href="duplicate ? '/guests/' + duplicate.id : '#'" class="font-semibold underline" x-text="duplicate && duplicate.name"></a>.</span></div>
+  <label class="sm:col-span-2 lg:col-span-4"><span class="label">{{ _("Adresse (domicile habituel)") }}</span><textarea class="input" name="address" rows="2">{{ g.address if g else '' }}</textarea></label>
+  <label class="sm:col-span-2"><span class="label">{{ _("Préférences (étage, oreiller, régime…)") }}</span><textarea class="input" name="preferences" rows="2">{{ g.preferences if g else '' }}</textarea></label>
+  <label class="sm:col-span-2"><span class="label">{{ _("Notes internes") }}</span><textarea class="input" name="notes" rows="2">{{ g.notes if g else '' }}</textarea></label>
 </div>

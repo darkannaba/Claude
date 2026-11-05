@@ -1,0 +1,51 @@
+{% extends "layout/base.html" %}
+{% import "macros/ui.html" as ui with context %}
+{% block title %}{{ _("Licence") }}{% endblock %}
+{% block content %}
+<div><h1 class="page-title">{{ _("Licence d'exploitation") }}</h1>
+  <p class="page-subtitle">{{ _("La licence est liée à ce serveur : communiquez son ID matériel à l'éditeur pour obtenir une clé d'activation.") }}</p></div>
+{% if user.role == 'admin' %}{% include "admin/_nav.html" %}{% endif %}
+
+<div class="grid gap-5 lg:grid-cols-2">
+  <section class="card">
+    <div class="card-title">{{ icon('id', 'h-4 w-4') }} {{ _("ID matériel de ce serveur") }}</div>
+    <div class="rounded-lg bg-slate-100 px-4 py-3 font-mono text-lg font-semibold tracking-wider dark:bg-slate-800 select-all">{{ status.hardware_id }}</div>
+    <p class="help mt-2">{{ _("Empreinte calculée à partir de l'adresse MAC, de l'UUID de la carte mère et de l'identifiant système.") }}</p>
+    {% if not public_key_present %}
+      <div class="flash-error mt-4">{{ icon('alert', 'h-5 w-5 shrink-0') }}<span>{{ _("Clé publique de l'éditeur absente") }} (<code>app/license_public_key.pem</code>) : {{ _("aucune licence ne peut être vérifiée.") }}</span></div>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <div class="card-title">{{ icon('shield', 'h-4 w-4') }} {{ _("État") }}</div>
+    {% if status.valid %}
+      <div class="flash-success mb-4">{{ icon('check', 'h-5 w-5 shrink-0') }}<span>{{ status.reason|tr }}</span></div>
+    {% else %}
+      <div class="flash-error mb-4">{{ icon('alert', 'h-5 w-5 shrink-0') }}<span>{{ status.reason|tr }}</span></div>
+    {% endif %}
+    {% if status.data %}
+    <dl class="space-y-1.5 text-sm">
+      <div class="flex justify-between"><dt>{{ _("N° de licence") }}</dt><dd class="font-mono">{{ status.data.license_id }}</dd></div>
+      <div class="flex justify-between"><dt>{{ _("Établissement") }}</dt><dd class="font-semibold">{{ status.data.hotel_name }}</dd></div>
+      <div class="flex justify-between"><dt>{{ _("Type") }}</dt><dd>{{ status.data.type_label|tr }}</dd></div>
+      <div class="flex justify-between"><dt>{{ _("Expiration") }}</dt><dd>{% if status.data.expires_at %}{{ status.data.expires_at|date }} ({{ status.data.days_left(today) }} {{ _("j") }}){% else %}{{ _("Aucune") }}{% endif %}</dd></div>
+      <div class="flex justify-between"><dt>{{ _("Chambres couvertes") }}</dt><dd>{{ status.data.max_rooms }}</dd></div>
+      <div class="flex justify-between"><dt>{{ _("Modules") }}</dt><dd class="flex flex-wrap justify-end gap-1">
+        {% for key, label in features.items() %}<span class="{{ 'badge-green' if key in status.data.features else 'badge-slate line-through' }}">{{ label|tr }}</span>{% endfor %}</dd></div>
+    </dl>
+    {% endif %}
+  </section>
+</div>
+
+{% if user.role == 'admin' %}
+<form method="post" action="/activate" class="card space-y-4">
+  {{ ui.csrf() }}
+  <div class="card-title">{{ icon('key', 'h-4 w-4') }} {{ _("Activer une clé") }}</div>
+  <label class="block"><span class="label">{{ _("Clé d'activation (HPMS1.…)") }}</span>
+    <textarea class="input font-mono text-xs" name="license_key" rows="5" required placeholder="HPMS1.eyJ…"></textarea></label>
+  <button class="btn-primary">{{ icon('check', 'h-4 w-4') }} {{ _("Activer la licence") }}</button>
+</form>
+{% else %}
+<div class="flash-info">{{ icon('alert', 'h-5 w-5') }}<span>{{ _("Seul un administrateur peut activer une licence.") }}</span></div>
+{% endif %}
+{% endblock %}

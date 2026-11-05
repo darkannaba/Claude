@@ -1,24 +1,24 @@
 {% extends "layout/base.html" %}
 {% import "macros/ui.html" as ui with context %}
-{% block title %}Doublons{% endblock %}
+{% block title %}{{ _("Doublons") }}{% endblock %}
 {% block content %}
-<div><div class="text-sm text-slate-500"><a href="/guests">Clients</a> / Doublons</div>
-  <h1 class="page-title">Doublons potentiels</h1>
-  <p class="page-subtitle">Les pièces d'identité identiques sont refusées à la saisie. Cette page détecte les fiches proches : même nom et date de naissance, ou même téléphone.</p></div>
+<div><div class="text-sm text-slate-500"><a href="/guests">{{ _("Clients") }}</a> / {{ _("Doublons") }}</div>
+  <h1 class="page-title">{{ _("Doublons potentiels") }}</h1>
+  <p class="page-subtitle">{{ _("Les pièces d'identité identiques sont refusées à la saisie. Cette page détecte les fiches proches : même nom et date de naissance, ou même téléphone.") }}</p></div>
 {% for group in groups %}
 <section class="card">
   <div class="table-wrap"><table class="table">
-    <thead><tr><th>Fiche</th><th>Nom</th><th>Naissance</th><th>Téléphone</th><th>Pièce</th>{% if user.role == 'admin' %}<th>Fusion</th>{% endif %}</tr></thead>
+    <thead><tr><th>{{ _("Fiche") }}</th><th>{{ _("Nom") }}</th><th>{{ _("Naissance") }}</th><th>{{ _("Téléphone") }}</th><th>{{ _("Pièce") }}</th>{% if user.role == 'admin' %}<th>{{ _("Fusion") }}</th>{% endif %}</tr></thead>
     <tbody>
     {% for g in group %}
-      <tr><td><a href="/guests/{{ g.id }}">n° {{ g.id }}</a></td><td>{{ g.full_name }}</td><td>{{ g.birth_date|date if g.birth_date else '—' }}</td>
-        <td>{{ g.phone }}</td><td class="text-xs">{{ g.id_type_label }} {{ g.id_number }}</td>
+      <tr><td><a href="/guests/{{ g.id }}">{{ _("n°") }} {{ g.id }}</a></td><td>{{ g.full_name }}</td><td>{{ g.birth_date|date if g.birth_date else '—' }}</td>
+        <td>{{ g.phone }}</td><td class="text-xs">{{ g.id_type_label|tr }} {{ g.id_number }}</td>
         {% if user.role == 'admin' %}<td>
           {% if not loop.first %}
-          <form method="post" action="/guests/merge" data-confirm="Fusionner la fiche n° {{ g.id }} dans la fiche n° {{ group[0].id }} ?">{{ ui.csrf() }}
+          <form method="post" action="/guests/merge" data-confirm="{{ _('Fusionner la fiche n°') }} {{ g.id }} {{ _('dans la fiche n°') }} {{ group[0].id }} ?">{{ ui.csrf() }}
             <input type="hidden" name="keep_id" value="{{ group[0].id }}"><input type="hidden" name="remove_id" value="{{ g.id }}">
-            <button class="btn-secondary btn-sm">Fusionner dans n° {{ group[0].id }}</button></form>
-          {% else %}<span class="badge-teal">fiche conservée</span>{% endif %}
+            <button class="btn-secondary btn-sm">{{ _("Fusionner dans n°") }} {{ group[0].id }}</button></form>
+          {% else %}<span class="badge-teal">{{ _("fiche conservée") }}</span>{% endif %}
         </td>{% endif %}</tr>
     {% endfor %}
     </tbody>

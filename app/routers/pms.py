@@ -439,21 +439,21 @@ def _pdf(content: bytes, filename: str) -> Response:
 
 
 @router.get("/reservations/{res_id}/police.pdf")
-async def police_form(db: DbSession, user: StaffUser, res_id: int):
+async def police_form(db: DbSession, user: StaffUser, res_id: int, lang: str = "bi"):
     res = await _reservation(db, res_id)
     hs = await load_hotel_settings(db)
-    return _pdf(pdf.police_form_pdf(hs, res, now_of(hs)), f"fiche-police-{res.code}.pdf")
+    return _pdf(pdf.police_form_pdf(hs, res, now_of(hs), lang=pdf.doc_lang(lang)), f"fiche-police-{res.code}.pdf")
 
 
 @router.get("/reservations/{res_id}/invoice.pdf")
-async def invoice_document(db: DbSession, user: StaffUser, res_id: int, format: str = "a4"):
+async def invoice_document(db: DbSession, user: StaffUser, res_id: int, format: str = "a4", lang: str = "bi"):
     res = await _reservation(db, res_id)
     if res.status in ("cancelled", "no_show") and not res.invoices:
         raise HTTPException(status_code=400, detail="Aucune facture pour une réservation annulée ou no-show.")
     hs = await load_hotel_settings(db)
     view = invoice_view(res, hs, await load_calendar(db, hs), now_of(hs))
     fmt = "ticket" if format == "ticket" else "a4"
-    return _pdf(pdf.invoice_pdf(hs, view, fmt), f"{view.number}-{fmt}.pdf")
+    return _pdf(pdf.invoice_pdf(hs, view, fmt, lang=pdf.doc_lang(lang)), f"{view.number}-{fmt}.pdf")
 
 
 @router.get("/reservations/{res_id}/qr.svg")
@@ -466,16 +466,20 @@ async def reservation_qr(db: DbSession, user: StaffUser, res_id: int):
 async def reservation_print(request: Request, db: DbSession, user: StaffUser, res_id: int, document: str):
     res = await _reservation(db, res_id)
     hs = await load_hotel_settings(db)
+    form = await request.form()
+    lang = pdf.doc_lang(form.get("lang"), "fr")  # champ de formulaire lang : fr (défaut) | ar | en | bi
 
     async def action():
         if document == "ticket":
             view = invoice_view(res, hs, await load_calendar(db, hs), now_of(hs))
-            await printing.print_raw(hs.thermal_printer_host, hs.thermal_printer_port, printing.invoice_receipt(view, hs))
+            await printing.print_raw(hs.thermal_printer_host, hs.thermal_printer_port,
+                                     printing.invoice_receipt(view, hs, lang=lang))
         elif document == "invoice":
             view = invoice_view(res, hs, await load_calendar(db, hs), now_of(hs))
-            await printing.print_raw(hs.a4_printer_host, hs.a4_printer_port, pdf.invoice_pdf(hs, view, "a4"))
+            await printing.print_raw(hs.a4_printer_host, hs.a4_printer_port, pdf.invoice_pdf(hs, view, "a4", lang=lang))
         elif document == "police":
-            await printing.print_raw(hs.a4_printer_host, hs.a4_printer_port, pdf.police_form_pdf(hs, res, now_of(hs)))
+            await printing.print_raw(hs.a4_printer_host, hs.a4_printer_port,
+                                     pdf.police_form_pdf(hs, res, now_of(hs), lang=lang))
         else:
             raise BusinessError("Document inconnu.")
 
@@ -545,12 +549,13 @@ async def night_audit_run(request: Request, db: DbSession, user: StaffUser, mode
 
 
 @router.get("/night-audit/{day}/report.pdf")
-async def night_audit_report(db: DbSession, user: StaffUser, day: str):
+async def night_audit_report(db: DbSession, user: StaffUser, day: str, lang: str = "bi"):
     business_date = parse_date(day)
     if business_date is None:
         raise HTTPException(status_code=400, detail="Date invalide.")
     hs = await load_hotel_settings(db)
-    return _pdf(pdf.daily_report_pdf(hs, await reports.daily_summary(db, business_date)), f"cloture-{day}.pdf")
+    return _pdf(pdf.daily_report_pdf(hs, await reports.daily_summary(db, business_date), lang=pdf.doc_lang(lang)),
+                f"cloture-{day}.pdf")
 
 
 # ---------------------------------------------------------------- factures

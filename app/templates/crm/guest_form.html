@@ -1,11 +1,11 @@
 {% extends "layout/base.html" %}
 {% import "macros/ui.html" as ui with context %}
-{% block title %}Nouveau client{% endblock %}
+{% block title %}{{ _("Nouveau client") }}{% endblock %}
 {% block content %}
-<div><div class="text-sm text-slate-500"><a href="/guests">Clients</a> / Nouveau</div><h1 class="page-title">Nouveau client</h1></div>
+<div><div class="text-sm text-slate-500"><a href="/guests">{{ _("Clients") }}</a> / {{ _("Nouveau") }}</div><h1 class="page-title">{{ _("Nouveau client") }}</h1></div>
 <form method="post" action="/guests" class="card space-y-5">
   {{ ui.csrf() }}
   {% include "crm/_guest_fields.html" %}
-  <div class="flex justify-end gap-2"><a class="btn-secondary" href="/guests">Annuler</a><button class="btn-primary">{{ icon('check', 'h-4 w-4') }} Créer la fiche</button></div>
+  <div class="flex justify-end gap-2"><a class="btn-secondary" href="/guests">{{ _("Annuler") }}</a><button class="btn-primary">{{ icon('check', 'h-4 w-4') }} {{ _("Créer la fiche") }}</button></div>
 </form>
 {% endblock %}

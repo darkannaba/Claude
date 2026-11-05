@@ -1,35 +1,35 @@
 {% extends "layout/base.html" %}
 {% import "macros/ui.html" as ui with context %}
-{% block title %}Housekeeping{% endblock %}
+{% block title %}{{ _("Housekeeping") }}{% endblock %}
 {% block content %}
 <div class="flex flex-wrap items-end justify-between gap-3">
   <div>
-    <h1 class="page-title">Housekeeping</h1>
-    <p class="page-subtitle">{{ columns.dirty|length }} chambre(s) à nettoyer · {{ departures|length }} départ(s) et {{ arrivals|length }} arrivée(s) aujourd'hui
-      {% if not can_change %}· <span class="badge-slate">{{ icon('lock', 'h-3 w-3') }} lecture seule : statuts gérés par la réception</span>{% endif %}</p>
+    <h1 class="page-title">{{ _("Housekeeping") }}</h1>
+    <p class="page-subtitle">{{ columns.dirty|length }} {{ _("chambre(s) à nettoyer") }} · {{ departures|length }} {{ _("départ(s) et") }} {{ arrivals|length }} {{ _("arrivée(s) aujourd'hui") }}
+      {% if not can_change %}· <span class="badge-slate">{{ icon('lock', 'h-3 w-3') }} {{ _("lecture seule : statuts gérés par la réception") }}</span>{% endif %}</p>
   </div>
   <form method="get" class="flex items-end gap-2">
-    <label><span class="label">Étage</span><select class="input" name="floor"><option value="">Tous</option>
-      {% for f in floors %}<option value="{{ f }}" {{ 'selected' if floor == f|string }}>Étage {{ f }}</option>{% endfor %}</select></label>
-    <button class="btn-secondary">Filtrer</button>
+    <label><span class="label">{{ _("Étage") }}</span><select class="input" name="floor"><option value="">{{ _("Tous") }}</option>
+      {% for f in floors %}<option value="{{ f }}" {{ 'selected' if floor == f|string }}>{{ _("Étage") }} {{ f }}</option>{% endfor %}</select></label>
+    <button class="btn-secondary">{{ _("Filtrer") }}</button>
   </form>
 </div>
 
 <div class="grid gap-5 md:grid-cols-2 2xl:grid-cols-4">
   {% for key, title, hint in [('dirty', 'À nettoyer', 'Priorité : arrivées du jour'), ('available', 'Libres et propres', 'Prêtes à la vente'), ('occupied', 'Occupées', 'Statut lié au séjour'), ('maintenance', 'En maintenance', 'Hors service')] %}
   <section class="card">
-    <div class="card-title justify-between"><span>{{ ui.room_badge(key) }} {{ title }}</span><span class="text-lg text-slate-900 dark:text-white">{{ columns[key]|length }}</span></div>
-    <p class="help -mt-2 mb-3">{{ hint }}</p>
+    <div class="card-title justify-between"><span>{{ ui.room_badge(key) }} {{ title|tr }}</span><span class="text-lg text-slate-900 dark:text-white">{{ columns[key]|length }}</span></div>
+    <p class="help -mt-2 mb-3">{{ hint|tr }}</p>
     <div class="space-y-2">
       {% for room in columns[key] %}
       <div class="room-tile room-{{ room.status }}">
         <div class="flex items-start justify-between gap-2">
           <div>
             <div class="text-lg font-bold">{{ room.number }}</div>
-            <div class="text-xs text-slate-500">{{ room.room_type.name }} · étage {{ room.floor }}</div>
-            {% if room.id in arrivals %}<span class="badge-blue mt-1">Arrivée aujourd'hui</span>{% endif %}
-            {% if room.id in departures %}<span class="badge-amber mt-1">Départ aujourd'hui</span>{% endif %}
-            {% if room.status == 'occupied' and occupant.get(room.id) %}<div class="mt-1 text-xs">Départ prévu le {{ occupant[room.id].check_out|date }}</div>{% endif %}
+            <div class="text-xs text-slate-500">{{ room.room_type.name }} · {{ _("étage") }} {{ room.floor }}</div>
+            {% if room.id in arrivals %}<span class="badge-blue mt-1">{{ _("Arrivée aujourd'hui") }}</span>{% endif %}
+            {% if room.id in departures %}<span class="badge-amber mt-1">{{ _("Départ aujourd'hui") }}</span>{% endif %}
+            {% if room.status == 'occupied' and occupant.get(room.id) %}<div class="mt-1 text-xs">{{ _("Départ prévu le") }} {{ occupant[room.id].check_out|date }}</div>{% endif %}
             {% if room.notes %}<div class="mt-1 text-xs italic text-slate-500">{{ room.notes }}</div>{% endif %}
           </div>
           {% if can_change and room.status != 'occupied' %}
@@ -38,7 +38,7 @@
               {% if room.status != target %}
               <form method="post" action="/housekeeping/rooms/{{ room.id }}/status">{{ ui.csrf() }}
                 <input type="hidden" name="status" value="{{ target }}"><input type="hidden" name="floor" value="{{ floor }}">
-                <button class="{{ cls }} btn-sm w-full">{{ 'Remettre en service' if room.status == 'maintenance' and target == 'available' else label }}</button>
+                <button class="{{ cls }} btn-sm w-full">{{ _("Remettre en service") if room.status == 'maintenance' and target == 'available' else label|tr }}</button>
               </form>
               {% endif %}
             {% endfor %}

@@ -1,42 +1,42 @@
 {% extends "layout/base.html" %}
 {% import "macros/ui.html" as ui with context %}
-{% block title %}Administration{% endblock %}
+{% block title %}{{ _("Administration") }}{% endblock %}
 {% block content %}
-<div><h1 class="page-title">Administration</h1><p class="page-subtitle">Toutes les valeurs métier sont modifiables ici : aucune n'est figée dans le code.</p></div>
+<div><h1 class="page-title">{{ _("Administration") }}</h1><p class="page-subtitle">{{ _("Toutes les valeurs métier sont modifiables ici : aucune n'est figée dans le code.") }}</p></div>
 {% include "admin/_nav.html" %}
 <form method="post" action="/admin/settings" class="space-y-5">
   {{ ui.csrf() }}
   {% for group in groups %}
   <section class="card">
-    <div class="card-title">{{ group.title }}</div>
+    <div class="card-title">{{ group.title|tr }}</div>
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {% for f in group.fields %}
         {% if f.kind == 'checkbox' %}
           <label class="flex items-start gap-2 text-sm sm:col-span-2 lg:col-span-3">
             <input class="checkbox mt-0.5" type="checkbox" name="s_{{ f.name }}" value="1" {{ 'checked' if f.value }}>
-            <span>{{ f.label }}{% if f.help %}<span class="help block">{{ f.help }}</span>{% endif %}</span></label>
+            <span>{{ f.label|tr }}{% if f.help %}<span class="help block">{{ f.help|tr }}</span>{% endif %}</span></label>
         {% elif f.kind == 'textarea' %}
-          <label class="sm:col-span-2 lg:col-span-3"><span class="label">{{ f.label }}</span>
+          <label class="sm:col-span-2 lg:col-span-3"><span class="label">{{ f.label|tr }}</span>
             <textarea class="input" name="s_{{ f.name }}" rows="2" {{ 'dir=rtl' if f.name.endswith('_ar') }}>{{ f.value }}</textarea></label>
         {% elif f.kind == 'select' %}
-          <label><span class="label">{{ f.label }}</span>
-            <select class="input" name="s_{{ f.name }}">{% for o in f.options %}<option value="{{ o }}" {{ 'selected' if f.value == o }}>{{ {"browser": "Navigateur (boîte d'impression)", "network": "Réseau direct (RAW 9100)"}.get(o, o) }}</option>{% endfor %}</select>
-            {% if f.help %}<span class="help">{{ f.help }}</span>{% endif %}</label>
+          <label><span class="label">{{ f.label|tr }}</span>
+            <select class="input" name="s_{{ f.name }}">{% for o in f.options %}<option value="{{ o }}" {{ 'selected' if f.value == o }}>{{ {"browser": "Navigateur (boîte d'impression)", "network": "Réseau direct (RAW 9100)"}.get(o, o)|tr }}</option>{% endfor %}</select>
+            {% if f.help %}<span class="help">{{ f.help|tr }}</span>{% endif %}</label>
         {% else %}
-          <label><span class="label">{{ f.label }}</span>
+          <label><span class="label">{{ f.label|tr }}</span>
             <input class="input" type="{{ 'number' if f.kind == 'number' else 'text' }}" name="s_{{ f.name }}" value="{{ f.value }}" {{ 'dir=rtl' if f.name.endswith('_ar') }}>
-            {% if f.help %}<span class="help">{{ f.help }}</span>{% endif %}</label>
+            {% if f.help %}<span class="help">{{ f.help|tr }}</span>{% endif %}</label>
         {% endif %}
       {% endfor %}
     </div>
   </section>
   {% endfor %}
-  <div class="sticky bottom-4 flex justify-end"><button class="btn-primary shadow-lg">{{ icon('check', 'h-4 w-4') }} Enregistrer les paramètres</button></div>
+  <div class="sticky bottom-4 flex justify-end"><button class="btn-primary shadow-lg">{{ icon('check', 'h-4 w-4') }} {{ _("Enregistrer les paramètres") }}</button></div>
 </form>
 <section class="card">
-  <div class="card-title">{{ icon('printer', 'h-4 w-4') }} Test de l'imprimante ticket</div>
+  <div class="card-title">{{ icon('printer', 'h-4 w-4') }} {{ _("Test de l'imprimante ticket") }}</div>
   <form method="post" action="/admin/printers/test" class="flex items-center gap-3">{{ ui.csrf() }}
-    <p class="text-sm text-slate-500">Envoie une page de test ESC/POS à {{ hs.thermal_printer_host or '(adresse non configurée)' }}:{{ hs.thermal_printer_port }}.</p>
-    <button class="btn-secondary">Imprimer un test</button></form>
+    <p class="text-sm text-slate-500">{{ _("Envoie une page de test ESC/POS à") }} {{ hs.thermal_printer_host or _('(adresse non configurée)') }}:{{ hs.thermal_printer_port }}.</p>
+    <button class="btn-secondary">{{ _("Imprimer un test") }}</button></form>
 </section>
 {% endblock %}

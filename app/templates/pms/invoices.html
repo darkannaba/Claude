@@ -1,10 +1,10 @@
 {% extends "layout/base.html" %}
 {% import "macros/ui.html" as ui with context %}
-{% block title %}Factures{% endblock %}
+{% block title %}{{ _("Factures") }}{% endblock %}
 {% block content %}
 <div class="flex flex-wrap items-end justify-between gap-3">
-  <div><h1 class="page-title">Factures émises</h1>
-    <p class="page-subtitle">Factures définitives (émises au départ) : montants figés, numérotation continue.</p></div>
+  <div><h1 class="page-title">{{ _("Factures émises") }}</h1>
+    <p class="page-subtitle">{{ _("Factures définitives (émises au départ) : montants figés, numérotation continue.") }}</p></div>
   {% if user.role == 'admin' %}
   <div class="flex gap-2">
     <a class="btn-secondary" href="/reports/export.xlsx?start={{ start.isoformat() }}&end={{ end.isoformat() }}">{{ icon('download', 'h-4 w-4') }} Excel</a>
@@ -13,19 +13,19 @@
   {% endif %}
 </div>
 <form method="get" class="card flex flex-wrap items-end gap-3">
-  <label><span class="label">Du</span><input class="input" type="date" name="start" value="{{ start.isoformat() }}"></label>
-  <label><span class="label">Au</span><input class="input" type="date" name="end" value="{{ end.isoformat() }}"></label>
-  <label class="flex-1"><span class="label">N° ou client</span><input class="input" name="q" value="{{ q }}"></label>
-  <button class="btn-primary">Filtrer</button>
+  <label><span class="label">{{ _("Du") }}</span><input class="input" type="date" name="start" value="{{ start.isoformat() }}"></label>
+  <label><span class="label">{{ _("Au") }}</span><input class="input" type="date" name="end" value="{{ end.isoformat() }}"></label>
+  <label class="flex-1"><span class="label">{{ _("N° ou client") }}</span><input class="input" name="q" value="{{ q }}"></label>
+  <button class="btn-primary">{{ _("Filtrer") }}</button>
 </form>
 <section class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-  <div class="kpi"><span class="kpi-label">Total TTC</span><span class="kpi-value">{{ totals.ttc|money }}</span></div>
-  <div class="kpi"><span class="kpi-label">Total HT</span><span class="kpi-value">{{ totals.ht|money }}</span></div>
-  <div class="kpi"><span class="kpi-label">TVA collectée</span><span class="kpi-value">{{ totals.vat|money }}</span></div>
-  <div class="kpi"><span class="kpi-label">Taxe de séjour</span><span class="kpi-value">{{ totals.tax|money }}</span></div>
+  <div class="kpi"><span class="kpi-label">{{ _("Total TTC") }}</span><span class="kpi-value">{{ totals.ttc|money }}</span></div>
+  <div class="kpi"><span class="kpi-label">{{ _("Total HT") }}</span><span class="kpi-value">{{ totals.ht|money }}</span></div>
+  <div class="kpi"><span class="kpi-label">{{ _("TVA collectée") }}</span><span class="kpi-value">{{ totals.vat|money }}</span></div>
+  <div class="kpi"><span class="kpi-label">{{ _("Taxe de séjour") }}</span><span class="kpi-value">{{ totals.tax|money }}</span></div>
 </section>
 <div class="card"><div class="table-wrap"><table class="table">
-  <thead><tr><th>N°</th><th>Date</th><th>Client</th><th>Séjour</th><th class="num">HT</th><th class="num">TVA</th><th class="num">Taxe</th><th class="num">TTC</th><th class="num">Solde</th><th></th></tr></thead>
+  <thead><tr><th>{{ _("N°") }}</th><th>{{ _("Date") }}</th><th>{{ _("Client") }}</th><th>{{ _("Séjour") }}</th><th class="num">{{ _("HT") }}</th><th class="num">{{ _("TVA") }}</th><th class="num">{{ _("Taxe") }}</th><th class="num">{{ _("TTC") }}</th><th class="num">{{ _("Solde") }}</th><th></th></tr></thead>
   <tbody>
   {% for inv, res in rows %}
     <tr><td class="font-mono font-medium">{{ inv.number }}</td><td>{{ inv.issued_at|date }}</td><td>{{ inv.customer_name }}</td>
@@ -35,7 +35,7 @@
       <td class="num {{ 'text-rose-600' if inv.balance > 0 }}">{{ inv.balance|money }}</td>
       <td class="text-right">{{ ui.print_link('/reservations/' ~ res.id ~ '/invoice.pdf?format=a4', 'A4', '/invoices', 'btn-secondary btn-sm') }}</td></tr>
   {% else %}
-    <tr><td colspan="10">{{ ui.empty("Aucune facture sur la période.") }}</td></tr>
+    <tr><td colspan="10">{{ ui.empty(_("Aucune facture sur la période.")) }}</td></tr>
   {% endfor %}
   </tbody>
 </table></div></div>

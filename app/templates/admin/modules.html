@@ -1,19 +1,19 @@
 {% extends "layout/base.html" %}
 {% import "macros/ui.html" as ui with context %}
-{% block title %}Modules{% endblock %}
+{% block title %}{{ _("Modules") }}{% endblock %}
 {% block content %}
-<div><h1 class="page-title">Modules annexes</h1>
-  <p class="page-subtitle">Chaque module est désactivé par défaut. Un module désactivé disparaît du menu, du point de vente et des imputations.</p></div>
+<div><h1 class="page-title">{{ _("Modules annexes") }}</h1>
+  <p class="page-subtitle">{{ _("Chaque module est désactivé par défaut. Un module désactivé disparaît du menu, du point de vente et des imputations.") }}</p></div>
 {% include "admin/_nav.html" %}
 <form method="post" action="/admin/modules" class="space-y-3">
   {{ ui.csrf() }}
   {% for f in flags %}
   <label class="card flex cursor-pointer items-center justify-between gap-4">
-    <span class="flex items-center gap-3">{{ icon('bag') }}<span><span class="block font-semibold">{{ f.label }}</span><span class="text-xs text-slate-500">{{ f.key }}</span></span></span>
+    <span class="flex items-center gap-3">{{ icon('bag') }}<span><span class="block font-semibold">{{ f.label|tr }}</span><span class="text-xs text-slate-500">{{ f.key }}</span></span></span>
     <span class="flex items-center gap-2 text-sm"><input class="checkbox h-5 w-5" type="checkbox" name="m_{{ f.key }}" value="1" {{ 'checked' if f.enabled }}>
-      {% if f.enabled %}<span class="badge-green">Activé</span>{% else %}<span class="badge-slate">Désactivé</span>{% endif %}</span>
+      {% if f.enabled %}<span class="badge-green">{{ _("Activé") }}</span>{% else %}<span class="badge-slate">{{ _("Désactivé") }}</span>{% endif %}</span>
   </label>
   {% endfor %}
-  <button class="btn-primary">{{ icon('check', 'h-4 w-4') }} Enregistrer</button>
+  <button class="btn-primary">{{ icon('check', 'h-4 w-4') }} {{ _("Enregistrer") }}</button>
 </form>
 {% endblock %}

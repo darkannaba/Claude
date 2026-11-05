@@ -127,10 +127,10 @@ async def order_void(request: Request, db: DbSession, user: StaffUser, order_id:
 
 
 @router.get("/orders/{order_id}/ticket.pdf")
-async def order_ticket(db: DbSession, user: StaffUser, order_id: int):
+async def order_ticket(db: DbSession, user: StaffUser, order_id: int, lang: str = "bi"):
     order = await _order(db, order_id)
     hs = await load_hotel_settings(db)
-    return Response(pdf.pos_ticket_pdf(hs, order), media_type="application/pdf",
+    return Response(pdf.pos_ticket_pdf(hs, order, lang=pdf.doc_lang(lang)), media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{order.number}.pdf"'})
 
 
@@ -138,9 +138,11 @@ async def order_ticket(db: DbSession, user: StaffUser, order_id: int):
 async def order_print(request: Request, db: DbSession, user: StaffUser, order_id: int):
     order = await _order(db, order_id)
     hs = await load_hotel_settings(db)
+    form = await request.form()
+    lang = pdf.doc_lang(form.get("lang"), "fr")  # champ de formulaire lang : fr (défaut) | en (ar / bi ⇒ anglais)
 
     async def action():
-        await printing.print_raw(hs.thermal_printer_host, hs.thermal_printer_port, printing.pos_receipt(order, hs))
+        await printing.print_raw(hs.thermal_printer_host, hs.thermal_printer_port, printing.pos_receipt(order, hs, lang=lang))
 
     await attempt(request, db, action, "Ticket envoyé à l'imprimante.")
     return redirect(f"/pos/orders/{order_id}")

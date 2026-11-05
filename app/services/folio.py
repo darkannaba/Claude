@@ -80,9 +80,14 @@ def build_folio(res: Reservation, hs: HotelSettings, calendar: RateCalendar | No
             night = seg.start_date
             while night < seg.end_date:
                 if room_key(res.id, night) not in posted_keys:
-                    price = calendar.price(seg.room.room_type, night, res.company)
+                    if res.nightly_rate_override is not None:
+                        price = res.nightly_rate_override
+                        label = f"Nuitée {night:%d/%m/%Y} – Chambre {seg.room.number} – tarif {res.channel} (prévisionnel)"
+                    else:
+                        price = calendar.price(seg.room.room_type, night, res.company)
+                        label = f"Nuitée {night:%d/%m/%Y} – Chambre {seg.room.number} (prévisionnel)"
                     folio.lines.append(FolioLine(
-                        night, "room", f"Nuitée {night:%d/%m/%Y} – Chambre {seg.room.number} (prévisionnel)",
+                        night, "room", label,
                         price, hs.vat_rate_accommodation, posted=False))
                 if hs.tourist_tax_enabled and persons and tax_key(res.id, night) not in posted_keys:
                     folio.lines.append(FolioLine(

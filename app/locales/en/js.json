@@ -1,0 +1,20 @@
+{
+  "Hébergement": "Accommodation",
+  "Services & POS": "Services & POS",
+  "Taxe de séjour": "Tourist tax",
+  "Taux d'occupation (%)": "Occupancy rate (%)",
+  "ADR (DA)": "ADR (DZD)",
+  "RevPAR (DA)": "RevPAR (DZD)",
+  "TO %": "Occ. %",
+  "Confirmer cette action ?": "Confirm this action?",
+  "Annuler cette réservation ?": "Cancel this reservation?",
+  "Déclarer un no-show ?": "Mark as no-show?",
+  "Clôturer le séjour ? Les nuits seront figées et la facture définitive émise.": "Close the stay? The nights will be frozen and the final invoice issued.",
+  "Clôturer cette journée ? Les nuitées seront figées.": "Close this business day? The room nights will be frozen.",
+  "Clôturer toutes les journées en attente ?": "Close all pending business days?",
+  "Retirer cet accompagnateur ?": "Remove this companion?",
+  "Supprimer ce tarif ?": "Delete this rate?",
+  "Annuler cette écriture ?": "Void this entry?",
+  "Annuler cette addition ?": "Void this bill?",
+  "Révoquer définitivement cette clé ?": "Permanently revoke this key?"
+}

@@ -2,7 +2,6 @@
 import asyncio
 import io
 import re
-import sqlite3
 from datetime import timedelta
 
 from sqlalchemy import select
@@ -136,34 +135,7 @@ def test_rooms_types_and_rates_admin(admin):
     assert admin.get("/admin/openapi.json").json()["info"]["title"].startswith("PMS")
 
 
-def test_backups_create_download_restore_upload(admin, tmp_dir):
-    assert admin.form("/admin/backups").status_code == 303
-    page = admin.get("/admin/backups").text
-    names = re.findall(r"/admin/backups/([0-9_\-]+)/download", page)
-    assert names
-    name = names[0]
-    download = admin.get(f"/admin/backups/{name}/download")
-    assert download.status_code == 200 and download.content[:15] == b"SQLite format 3"
-    assert admin.form(f"/admin/backups/{name}/restore").status_code == 303
-    assert "Base restaurée" in admin.get("/admin/backups").text
-    # Import d'un fichier invalide puis d'une vraie sauvegarde
-    bad = admin.post("/admin/backups/upload", data={"csrf_token": admin.csrf},
-                     files={"file": ("pas-une-base.db", b"bonjour", "application/octet-stream")}, follow_redirects=False)
-    assert bad.status_code == 303
-    assert "pas une base de données SQLite valide" in admin.get("/admin/backups").text
-    other = tmp_dir / "autre.db"
-    sqlite3.connect(other).execute("create table t(x)").connection.commit()
-    missing = admin.post("/admin/backups/upload", data={"csrf_token": admin.csrf},
-                         files={"file": ("autre.db", other.read_bytes(), "application/octet-stream")}, follow_redirects=False)
-    assert missing.status_code == 303
-    assert "tables manquantes" in admin.get("/admin/backups").text
-    good = admin.post("/admin/backups/upload", data={"csrf_token": admin.csrf},
-                      files={"file": ("ok.db", download.content, "application/octet-stream")}, follow_redirects=False)
-    assert good.status_code == 303
-    assert admin.form(f"/admin/backups/{name}/delete").status_code == 303
-    assert admin.get(f"/admin/backups/{name}/download").status_code == 404
-    assert admin.form("/admin/backups/.secret/delete").status_code == 303
-    assert "Nom de sauvegarde invalide" in admin.get("/admin/backups").text
+# Les sauvegardes (double sauvegarde locale + Google Drive) sont testées dans tests/test_backup.py.
 
 
 # ---------------------------------------------------------------- CRM

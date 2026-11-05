@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr" class="h-full">
+<html lang="{{ lang }}" dir="{{ dir }}" class="h-full{{ ' ar' if lang == 'ar' else '' }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -14,8 +14,8 @@
     <h1 class="mt-2 text-xl font-semibold">{{ title }}</h1>
     <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">{{ message }}</p>
     <div class="mt-6 flex justify-center gap-2">
-      <a class="btn-secondary" href="/login">Connexion</a>
-      <a class="btn-primary" href="/">Accueil</a>
+      <a class="btn-secondary" href="/login">{{ _("Connexion") }}</a>
+      <a class="btn-primary" href="/">{{ _("Accueil") }}</a>
     </div>
   </div>
 </body>

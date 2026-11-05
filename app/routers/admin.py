@@ -1,11 +1,10 @@
 """Administration : paramètres, chambres, tarifs, modules, utilisateurs, sauvegardes, journal, API."""
 from __future__ import annotations
 
-import asyncio
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import APIRouter, Form, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 
 from app.config import config
@@ -14,14 +13,27 @@ from app.models.audit import AuditLog
 from app.models.room import RatePeriod, Room, RoomType
 from app.models.system import FeatureFlag
 from app.models.user import ROLES, User
-from app.services import backup, printing
+from app.database import SessionLocal
+from app.services import licensing, printing
 from app.services.audit_log import log_action
 from app.services.common import BusinessError, to_date, to_int
 from app.services.security import hash_password, password_problems
-from app.services.settings import load_hotel_settings, now_of, save_hotel_settings, settings_form
-from app.templating import flash, render
+from app.services.settings import load_hotel_settings, save_hotel_settings, settings_form
+from app.templating import render
 
 router = APIRouter(prefix="/admin")
+
+
+async def _check_room_limit(db, adding: int = 1) -> None:
+    """Refuse de dépasser le nombre de chambres couvert par la licence."""
+    if not config.license_enforced:
+        return
+    status = await licensing.current_status(SessionLocal)
+    if status.data is None:
+        return
+    active = await db.scalar(select(func.count(Room.id)).where(Room.active.is_(True))) or 0
+    if active + adding > status.data.max_rooms:
+        raise BusinessError(f"La licence couvre {status.data.max_rooms} chambres actives : limite atteinte.")
 
 
 # ---------------------------------------------------------------- paramètres
@@ -118,6 +130,7 @@ async def room_create(request: Request, db: DbSession, user: AdminUser, number: 
         type_id = to_int(room_type_id, "Type de chambre")
         if await db.get(RoomType, type_id) is None:
             raise BusinessError("Type de chambre introuvable.")
+        await _check_room_limit(db)
         db.add(Room(number=number.strip()[:12], floor=to_int(floor, "Étage", default=0), room_type_id=type_id))
         await log_action(db, user, "room_created", "room", number.strip(), "")
 
@@ -144,6 +157,8 @@ async def room_update(request: Request, db: DbSession, user: AdminUser, room_id:
         room.notes = notes.strip()
         if not active and room.status == "occupied":
             raise BusinessError("Une chambre occupée ne peut pas être désactivée.")
+        if active and not room.active:
+            await _check_room_limit(db)
         room.active = bool(active)
         await log_action(db, user, "room_updated", "room", room.number, "active" if room.active else "désactivée")
 
@@ -268,71 +283,6 @@ async def user_update(request: Request, db: DbSession, user: AdminUser, user_id:
 
     await attempt(request, db, action, "Utilisateur mis à jour.")
     return redirect("/admin/users")
-
-
-# ---------------------------------------------------------------- sauvegardes
-@router.get("/backups")
-async def backups_page(request: Request, db: DbSession, user: AdminUser):
-    items = await asyncio.to_thread(backup.list_backups)
-    return await render(request, db, "admin/backups.html", backups=items, backup_dir=config.backup_dir,
-                        retention=config.backup_retention)
-
-
-@router.post("/backups")
-async def backup_create(request: Request, db: DbSession, user: AdminUser):
-    hs = await load_hotel_settings(db)
-
-    async def action():
-        info = await asyncio.to_thread(backup.create_backup, "manuelle", now_of(hs))
-        await log_action(db, user, "backup", "backup", info.name, "Sauvegarde manuelle", now_of(hs))
-
-    await attempt(request, db, action, "Sauvegarde créée.")
-    return redirect("/admin/backups")
-
-
-@router.get("/backups/{name}/download")
-async def backup_download(db: DbSession, user: AdminUser, name: str):
-    try:
-        info = backup.get_backup(name)
-    except BusinessError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return FileResponse(info.path, media_type="application/x-sqlite3", filename=f"hotel_{info.name}.db")
-
-
-@router.post("/backups/{name}/restore")
-async def backup_restore(request: Request, db: DbSession, user: AdminUser, name: str):
-    await db.rollback()  # libère la connexion de la requête avant d'écraser la base
-
-    async def action():
-        safety = await asyncio.to_thread(backup.restore_backup, name)
-        flash(request, f"Sauvegarde de sécurité créée avant restauration : {safety.name}.", "info")
-
-    await attempt(request, db, action, f"Base restaurée depuis la sauvegarde {name}. Reconnectez-vous si nécessaire.")
-    return redirect("/admin/backups")
-
-
-@router.post("/backups/upload")
-async def backup_upload(request: Request, db: DbSession, user: AdminUser, file: Annotated[UploadFile, File()]):
-    content = await file.read()
-    await db.rollback()
-
-    async def action():
-        path = await asyncio.to_thread(backup.store_upload, content, file.filename or "upload.db")
-        safety = await asyncio.to_thread(backup.restore_from_file, path)
-        flash(request, f"Sauvegarde de sécurité créée avant restauration : {safety.name}.", "info")
-
-    await attempt(request, db, action, "Base restaurée depuis le fichier importé.")
-    return redirect("/admin/backups")
-
-
-@router.post("/backups/{name}/delete")
-async def backup_delete(request: Request, db: DbSession, user: AdminUser, name: str):
-    async def action():
-        await asyncio.to_thread(backup.delete_backup, name)
-        await log_action(db, user, "backup_deleted", "backup", name, "")
-
-    await attempt(request, db, action, "Sauvegarde supprimée.")
-    return redirect("/admin/backups")
 
 
 # ---------------------------------------------------------------- journal et API

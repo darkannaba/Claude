@@ -1,21 +1,21 @@
 {% extends "layout/base.html" %}
 {% import "macros/ui.html" as ui with context %}
-{% block title %}Mouvements de stock{% endblock %}
+{% block title %}{{ _("Mouvements de stock") }}{% endblock %}
 {% block content %}
-<div><div class="text-sm text-slate-500"><a href="/pos">Points de vente</a> / Stock</div>
-  <h1 class="page-title">Mouvements de stock</h1>
-  <p class="page-subtitle">{{ sold }} unité(s) vendue(s) sur les {{ days }} derniers jours.</p></div>
+<div><div class="text-sm text-slate-500"><a href="/pos">{{ _("Points de vente") }}</a> / {{ _("Stock") }}</div>
+  <h1 class="page-title">{{ _("Mouvements de stock") }}</h1>
+  <p class="page-subtitle">{{ sold }} {{ _("unité(s) vendue(s) sur les") }} {{ days }} {{ _("derniers jours.") }}</p></div>
 <form method="get" class="card flex flex-wrap items-end gap-3">
-  <label><span class="label">Article</span><select class="input" name="item_id"><option value="">Tous</option>
+  <label><span class="label">{{ _("Article") }}</span><select class="input" name="item_id"><option value="">{{ _("Tous") }}</option>
     {% for i in items %}<option value="{{ i.id }}" {{ 'selected' if item_id == i.id|string }}>{{ i.name }}</option>{% endfor %}</select></label>
-  <label><span class="label">Période (jours)</span><input class="input w-28" type="number" name="days" value="{{ days }}" min="1" max="365"></label>
-  <button class="btn-primary">Afficher</button>
+  <label><span class="label">{{ _("Période (jours)") }}</span><input class="input w-28" type="number" name="days" value="{{ days }}" min="1" max="365"></label>
+  <button class="btn-primary">{{ _("Afficher") }}</button>
 </form>
 <div class="card"><div class="table-wrap"><table class="table">
-  <thead><tr><th>Date</th><th>Article</th><th>Motif</th><th>Référence</th><th>Par</th><th class="num">Quantité</th></tr></thead>
+  <thead><tr><th>{{ _("Date") }}</th><th>{{ _("Article") }}</th><th>{{ _("Motif") }}</th><th>{{ _("Référence") }}</th><th>{{ _("Par") }}</th><th class="num">{{ _("Quantité") }}</th></tr></thead>
   <tbody>
   {% for m in movements %}
-    <tr><td>{{ m.created_at|dt }}</td><td>{{ m.item.name }}</td><td>{{ STOCK_REASONS.get(m.reason, m.reason) }}</td>
+    <tr><td>{{ m.created_at|dt }}</td><td>{{ m.item.name }}</td><td>{{ STOCK_REASONS.get(m.reason, m.reason)|tr }}</td>
       <td class="font-mono text-xs">{{ m.reference }}</td><td class="text-xs">{{ m.user.username if m.user else '—' }}</td>
       <td class="num font-semibold {{ 'text-rose-600' if m.quantity < 0 else 'text-emerald-600' }}">{{ '%+d'|format(m.quantity) }}</td></tr>
   {% else %}

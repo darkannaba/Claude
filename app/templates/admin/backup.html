@@ -1,0 +1,127 @@
+{% extends "layout/base.html" %}
+{% import "macros/ui.html" as ui with context %}
+{% block title %}{{ _("Sauvegardes") }}{% endblock %}
+{% block content %}
+<div><h1 class="page-title">{{ _("Sauvegardes et restauration") }}</h1>
+  <p class="page-subtitle">{{ _("Double sauvegarde automatique : archive ZIP horodatée sur le disque local et copie sur Google Drive, chaque jour à partir de l'heure choisie. Une sauvegarde de sécurité est créée avant toute restauration.") }}</p></div>
+{% include "admin/_nav.html" %}
+
+{% set knob = 'right-0.5 peer-checked:-translate-x-5' if dir == 'rtl' else 'left-0.5 peer-checked:translate-x-5' %}
+<div class="grid gap-5 lg:grid-cols-2">
+  <form method="post" action="/admin/backups/settings" class="card space-y-4">{{ ui.csrf() }}
+    <div class="card-title">{{ icon('clock', 'h-4 w-4') }} {{ _("Sauvegarde automatique") }}</div>
+    <label class="flex cursor-pointer items-center justify-between gap-4">
+      <span><span class="block text-sm font-medium">{{ _("Sauvegarde automatique sur disque local") }}</span>
+        <span class="help">{{ _("Archives ZIP dans") }} <code class="text-xs">{{ local_root }}</code></span></span>
+      <span class="relative inline-flex shrink-0">
+        <input type="checkbox" class="peer sr-only" name="backup_local_enabled" value="1" {{ 'checked' if hs.backup_local_enabled }}>
+        <span class="h-6 w-11 rounded-full bg-slate-300 transition peer-checked:bg-brand-600 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 dark:bg-slate-700"></span>
+        <span class="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition {{ knob }}"></span>
+      </span>
+    </label>
+    <label class="flex cursor-pointer items-center justify-between gap-4">
+      <span><span class="block text-sm font-medium">{{ _("Sauvegarde automatique sur Google Drive") }}</span>
+        <span class="help">{% if drive_ready %}{{ _("Copie de chaque archive dans le dossier Drive indiqué ci-dessous.") }}{% else %}{{ _("Associez d'abord un compte Google (ci-contre).") }}{% endif %}</span></span>
+      <span class="relative inline-flex shrink-0">
+        <input type="checkbox" class="peer sr-only" name="backup_drive_enabled" value="1" {{ 'checked' if hs.backup_drive_enabled }}>
+        <span class="h-6 w-11 rounded-full bg-slate-300 transition peer-checked:bg-brand-600 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 dark:bg-slate-700"></span>
+        <span class="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition {{ knob }}"></span>
+      </span>
+    </label>
+    <div class="grid gap-3 sm:grid-cols-2">
+      <label><span class="label">{{ _("Heure de la sauvegarde automatique (0-23)") }}</span>
+        <input class="input" type="number" name="backup_hour" min="0" max="23" value="{{ hs.backup_hour }}"></label>
+      <label><span class="label">{{ _("Rétention des sauvegardes (jours)") }}</span>
+        <input class="input" type="number" name="backup_retention_days" min="1" max="3650" value="{{ hs.backup_retention_days }}">
+        <span class="help">{{ _("Les archives locales et les fichiers Drive plus anciens sont supprimés ; la dernière sauvegarde de sécurité est toujours conservée.") }}</span></label>
+      <label class="sm:col-span-2"><span class="label">{{ _("Google Drive – identifiant du dossier de destination") }}</span>
+        <input class="input" name="backup_drive_folder_id" value="{{ hs.backup_drive_folder_id }}" placeholder="1AbCdEfGhIjKlMnOpQrStUvWxYz" dir="ltr">
+        <span class="help">{{ _("Partie finale de l'URL du dossier Drive (l'URL complète est acceptée). Vide = racine du Drive. Avec un compte de service, partagez ce dossier avec son adresse.") }}</span></label>
+    </div>
+    <div class="flex justify-end"><button class="btn-primary">{{ icon('check', 'h-4 w-4') }} {{ _("Enregistrer") }}</button></div>
+  </form>
+
+  <section class="card space-y-4">
+    <div class="card-title">{{ icon('key', 'h-4 w-4') }} {{ _("Association Google Drive") }}</div>
+    {% if google.kind %}
+      <div class="flex flex-wrap items-center gap-2 text-sm">
+        <span class="badge-green">{{ icon('check', 'h-3 w-3') }} {{ google.label|tr }}</span>
+        {% if google.email %}<span class="font-mono text-xs" dir="ltr">{{ google.email }}</span>{% endif %}
+        <span class="help">{{ _("Fichier") }} <code class="text-xs">data/google/{{ google.file }}</code></span>
+      </div>
+      {% if google.last_test %}
+        <div class="text-sm">{{ _("Dernier test") }} : <span class="text-xs">{{ google.last_test.at|replace('T', ' ') }}</span>
+          {% if google.last_test.ok %}<span class="badge-green">{{ _("Réussi") }}</span>{% else %}<span class="badge-red">{{ _("Échec") }}</span>{% endif %}
+          <div class="help">{{ google.last_test.detail }}</div></div>
+      {% else %}
+        <p class="help">{{ _("Connexion jamais testée.") }}</p>
+      {% endif %}
+      <div class="flex flex-wrap gap-2">
+        <form method="post" action="/admin/backups/google/test">{{ ui.csrf() }}<button class="btn-secondary btn-sm">{{ icon('swap', 'h-4 w-4') }} {{ _("Tester la connexion") }}</button></form>
+        <form method="post" action="/admin/backups/google/unlink" data-confirm="{{ _('Dissocier le compte Google ? La sauvegarde automatique sur Google Drive sera désactivée.') }}">{{ ui.csrf() }}<button class="btn-danger btn-sm">{{ icon('x', 'h-4 w-4') }} {{ _("Dissocier") }}</button></form>
+      </div>
+    {% else %}
+      <div class="text-sm"><span class="badge-amber">{{ icon('alert', 'h-3 w-3') }} {{ _("Aucun compte associé") }}</span></div>
+    {% endif %}
+    <form method="post" action="/admin/backups/google/credentials" enctype="multipart/form-data" class="space-y-2 border-t border-slate-200 pt-4 dark:border-slate-800">{{ ui.csrf() }}
+      <span class="label">{{ _("Importer un fichier d'identification JSON") }}</span>
+      <div class="flex gap-2"><input class="input" type="file" name="file" accept=".json,application/json" required>
+        <button class="btn-primary">{{ icon('upload', 'h-4 w-4') }} {{ _("Importer") }}</button></div>
+      <p class="help">{{ _("Méthode recommandée : compte de service Google Cloud (fichier credentials.json), puis partage du dossier Drive avec l'adresse de ce compte. Alternative : jeton utilisateur token.json produit par scripts/google_drive_auth.py sur un PC disposant d'un navigateur. Le fichier est conservé dans data/google/ et n'est jamais affiché.") }}</p>
+    </form>
+  </section>
+</div>
+
+<div class="grid gap-5 lg:grid-cols-2">
+  <form method="post" action="/admin/backups/run" class="card space-y-3">{{ ui.csrf() }}
+    <div class="card-title">{{ icon('archive', 'h-4 w-4') }} {{ _("Sauvegarde immédiate") }}</div>
+    <p class="help">{{ _("Copie cohérente de la base, même pendant l'utilisation (mode WAL), avec les médias et un manifeste (version, révision du schéma, somme de contrôle).") }}</p>
+    <div class="flex flex-wrap gap-4 text-sm">
+      <label class="flex items-center gap-2"><input class="checkbox" type="checkbox" name="dest_local" value="1" checked> {{ _("Disque local") }}</label>
+      <label class="flex items-center gap-2"><input class="checkbox" type="checkbox" name="dest_drive" value="1" {{ 'checked' if drive_ready and hs.backup_drive_enabled }} {{ 'disabled' if not drive_ready }}> {{ _("Google Drive") }}{% if not drive_ready %} <span class="help">({{ _("aucun compte associé") }})</span>{% endif %}</label>
+    </div>
+    <button class="btn-primary">{{ icon('archive', 'h-4 w-4') }} {{ _("Lancer une sauvegarde immédiate") }}</button>
+  </form>
+  <form method="post" action="/admin/backups/upload" enctype="multipart/form-data" class="card space-y-3"
+        data-confirm="{{ _('Restaurer la base depuis ce fichier ? Les données actuelles seront remplacées (une sauvegarde de sécurité est faite avant).') }}">{{ ui.csrf() }}
+    <div class="card-title">{{ icon('upload', 'h-4 w-4') }} {{ _("Restaurer depuis un fichier") }}</div>
+    <p class="help">{{ _("Archive .zip produite par l'application ou base .db brute : contrôle d'intégrité et de structure avant toute restauration.") }}</p>
+    <div class="flex gap-2"><input class="input" type="file" name="file" accept=".zip,.db,.sqlite,.sqlite3" required>
+      <button class="btn-warning">{{ icon('upload', 'h-4 w-4') }} {{ _("Restaurer") }}</button></div>
+  </form>
+</div>
+
+{% set status_colors = {'success': 'badge-green', 'failed': 'badge-red', 'running': 'badge-amber', 'deleted': 'badge-slate'} %}
+<section class="card">
+  <div class="card-title">{{ icon('clock', 'h-4 w-4') }} {{ _("Historique des sauvegardes") }}</div>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>{{ _("Date") }}</th><th>{{ _("Archive") }}</th><th>{{ _("Destination") }}</th><th>{{ _("Déclencheur") }}</th><th>{{ _("Statut") }}</th><th class="num">{{ _("Taille") }}</th><th>{{ _("Lien Drive") }}</th><th class="text-right">{{ _("Actions") }}</th></tr></thead>
+    <tbody>
+    {% for j in jobs %}
+      <tr class="{{ 'opacity-60' if j.status == 'deleted' }}">
+        <td class="whitespace-nowrap text-xs">{{ j.created_at|dt }}</td>
+        <td class="font-mono text-xs" dir="ltr">{{ j.archive_name }}</td>
+        <td>{{ j.destination_label|tr }}</td>
+        <td><span class="badge-slate">{{ triggers.get(j.trigger, j.trigger)|tr }}</span></td>
+        <td><span class="{{ status_colors.get(j.status, 'badge-slate') }}">{{ j.status_label|tr }}</span>
+          {% if j.error %}<div class="mt-1 max-w-xs text-xs text-rose-600 dark:text-rose-400">{{ j.error }}</div>{% endif %}</td>
+        <td class="num">{{ j.size_label }}</td>
+        <td class="text-xs">{% if j.remote_link %}<a href="{{ j.remote_link }}" target="_blank" rel="noopener">{{ _("Ouvrir") }}</a>{% elif j.remote_id %}<span class="font-mono">{{ j.remote_id[:12] }}…</span>{% else %}—{% endif %}</td>
+        <td><div class="flex justify-end gap-2">
+          {% if j.status == 'success' %}
+          <a class="btn-secondary btn-sm" href="/admin/backups/{{ j.id }}/download">{{ icon('download', 'h-4 w-4') }} {{ _("Télécharger") }}</a>
+          <form method="post" action="/admin/backups/{{ j.id }}/restore" data-confirm="{{ _('Restaurer cette sauvegarde ? Les données actuelles seront remplacées (une sauvegarde de sécurité est faite avant).') }}">{{ ui.csrf() }}
+            <button class="btn-warning btn-sm">{{ icon('upload', 'h-4 w-4') }} {{ _("Restaurer") }}</button></form>
+          {% endif %}
+          {% if j.status != 'deleted' %}
+          <form method="post" action="/admin/backups/{{ j.id }}/delete" data-confirm="{{ _('Supprimer définitivement cette sauvegarde ?') }}">{{ ui.csrf() }}
+            <button class="btn-ghost btn-sm" title="{{ _('Supprimer') }}">{{ icon('trash', 'h-4 w-4') }}</button></form>
+          {% endif %}
+        </div></td></tr>
+    {% else %}
+      <tr><td colspan="8">{{ ui.empty(_("Aucune sauvegarde pour l'instant.")) }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}

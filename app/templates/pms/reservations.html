@@ -1,27 +1,27 @@
 {% extends "layout/base.html" %}
 {% import "macros/ui.html" as ui with context %}
-{% block title %}Réservations{% endblock %}
+{% block title %}{{ _("Réservations") }}{% endblock %}
 {% block content %}
 <div class="flex flex-wrap items-end justify-between gap-3">
-  <div><h1 class="page-title">Réservations</h1><p class="page-subtitle">{{ rows|length }} résultat(s) (200 au maximum)</p></div>
-  <a class="btn-primary" href="/reservations/new">{{ icon('plus', 'h-4 w-4') }} Nouvelle réservation</a>
+  <div><h1 class="page-title">{{ _("Réservations") }}</h1><p class="page-subtitle">{{ rows|length }} {{ _("résultat(s) (200 au maximum)") }}</p></div>
+  <a class="btn-primary" href="/reservations/new">{{ icon('plus', 'h-4 w-4') }} {{ _("Nouvelle réservation") }}</a>
 </div>
 
 <form method="get" class="card no-print grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-  <label class="lg:col-span-2"><span class="label">Recherche : code, nom, téléphone, pièce</span>
+  <label class="lg:col-span-2"><span class="label">{{ _("Recherche : code, nom, téléphone, pièce") }}</span>
     <input class="input" name="q" value="{{ q }}" autocomplete="off"></label>
-  <label><span class="label">Statut</span>
-    <select class="input" name="status"><option value="">Tous</option>
-      {% for key, label in RES_STATUSES.items() %}<option value="{{ key }}" {{ 'selected' if status == key }}>{{ label }}</option>{% endfor %}</select></label>
-  <label><span class="label">Séjours à partir du</span><input class="input" type="date" name="start" value="{{ start }}"></label>
-  <label><span class="label">jusqu'au</span><input class="input" type="date" name="end" value="{{ end }}"></label>
-  <div class="flex gap-2 lg:col-span-5"><button class="btn-primary">{{ icon('search', 'h-4 w-4') }} Filtrer</button><a class="btn-ghost" href="/reservations">Réinitialiser</a></div>
+  <label><span class="label">{{ _("Statut") }}</span>
+    <select class="input" name="status"><option value="">{{ _("Tous") }}</option>
+      {% for key, label in RES_STATUSES.items() %}<option value="{{ key }}" {{ 'selected' if status == key }}>{{ label|tr }}</option>{% endfor %}</select></label>
+  <label><span class="label">{{ _("Séjours à partir du") }}</span><input class="input" type="date" name="start" value="{{ start }}"></label>
+  <label><span class="label">{{ _("jusqu'au") }}</span><input class="input" type="date" name="end" value="{{ end }}"></label>
+  <div class="flex gap-2 lg:col-span-5"><button class="btn-primary">{{ icon('search', 'h-4 w-4') }} {{ _("Filtrer") }}</button><a class="btn-ghost" href="/reservations">{{ _("Réinitialiser") }}</a></div>
 </form>
 
 <div class="card">
   <div class="table-wrap">
     <table class="table">
-      <thead><tr><th>Code</th><th>Client</th><th>Chambre</th><th>Arrivée</th><th>Départ</th><th class="num">Nuits</th><th>Canal</th><th>Statut</th></tr></thead>
+      <thead><tr><th>{{ _("Code") }}</th><th>{{ _("Client") }}</th><th>{{ _("Chambre") }}</th><th>{{ _("Arrivée") }}</th><th>{{ _("Départ") }}</th><th class="num">{{ _("Nuits") }}</th><th>{{ _("Canal") }}</th><th>{{ _("Statut") }}</th></tr></thead>
       <tbody>
       {% for r in rows %}
         <tr>
@@ -32,11 +32,11 @@
           <td>{{ r.check_in|date }}</td>
           <td>{{ r.check_out|date }}</td>
           <td class="num">{{ r.nights }}</td>
-          <td class="text-xs">{{ r.channel }}</td>
+          <td class="text-xs">{{ r.channel|tr }}</td>
           <td>{{ ui.res_badge(r.status) }}</td>
         </tr>
       {% else %}
-        <tr><td colspan="8">{{ ui.empty("Aucune réservation ne correspond à ces critères.") }}</td></tr>
+        <tr><td colspan="8">{{ ui.empty(_("Aucune réservation ne correspond à ces critères.")) }}</td></tr>
       {% endfor %}
       </tbody>
     </table>

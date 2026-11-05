@@ -49,6 +49,10 @@ class AppConfig(BaseSettings):
 
     fonts_dir: Path = BASE_DIR / "app" / "static" / "fonts"
 
+    # Licence matérielle : clé publique de l'éditeur (Ed25519) et activation du contrôle
+    license_enforced: bool = True
+    license_public_key_file: Path = BASE_DIR / "app" / "license_public_key.pem"
+
     @model_validator(mode="after")
     def _derive_defaults(self) -> "AppConfig":
         self.data_dir.mkdir(parents=True, exist_ok=True)

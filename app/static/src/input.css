@@ -80,6 +80,14 @@
   .bar-checked_out { @apply bg-slate-400 dark:bg-slate-600; }
 }
 
+/* Miroir RTL (arabe) des composants globaux : dir="rtl" est posé sur <html> par layout/base.html */
+[dir="rtl"] .table th { text-align: right; }
+[dir="rtl"] .num { text-align: left; }
+[dir="rtl"] .table-wrap { direction: rtl; }
+[dir="rtl"] .gantt .sticky-col { left: auto; right: 0; text-align: right; }
+[dir="rtl"] .text-left { text-align: right; }
+[dir="rtl"] .text-right { text-align: left; }
+
 @media print {
   .no-print { display: none !important; }
   body { background: #fff !important; color: #000 !important; }

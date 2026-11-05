@@ -1,31 +1,31 @@
 {% extends "layout/base.html" %}
 {% import "macros/ui.html" as ui with context %}
-{% block title %}Utilisateurs{% endblock %}
+{% block title %}{{ _("Utilisateurs") }}{% endblock %}
 {% block content %}
-<div><h1 class="page-title">Utilisateurs et rôles</h1>
-  <p class="page-subtitle"><strong>Administrateur</strong> : tout. <strong>Réception</strong> : séjours, clients, POS, audit de nuit, rapports. <strong>Gouvernante</strong> : housekeeping uniquement. Mots de passe hachés (Argon2) ; changement imposé à la première connexion.</p></div>
+<div><h1 class="page-title">{{ _("Utilisateurs et rôles") }}</h1>
+  <p class="page-subtitle"><strong>{{ _("Administrateur") }}</strong> : {{ _("tout.") }} <strong>{{ _("Réception") }}</strong> : {{ _("séjours, clients, POS, audit de nuit, rapports.") }} <strong>{{ _("Gouvernante") }}</strong> : {{ _("housekeeping uniquement.") }} {{ _("Mots de passe hachés (Argon2) ; changement imposé à la première connexion.") }}</p></div>
 {% include "admin/_nav.html" %}
 <section class="card">
   <div class="table-wrap"><table class="table">
-    <thead><tr><th>Identifiant</th><th>Nom affiché</th><th>Rôle</th><th>Actif</th><th>Dernière connexion</th><th>Nouveau mot de passe</th><th></th></tr></thead>
+    <thead><tr><th>{{ _("Identifiant") }}</th><th>{{ _("Nom affiché") }}</th><th>{{ _("Rôle") }}</th><th>{{ _("Actif") }}</th><th>{{ _("Dernière connexion") }}</th><th>{{ _("Nouveau mot de passe") }}</th><th></th></tr></thead>
     <tbody>
     {% for u in users %}
-      <tr><td class="font-mono font-semibold">{{ u.username }}{% if u.must_change_password %} <span class="badge-amber">à changer</span>{% endif %}</td>
+      <tr><td class="font-mono font-semibold">{{ u.username }}{% if u.must_change_password %} <span class="badge-amber">{{ _("à changer") }}</span>{% endif %}</td>
         <td><input class="input" form="u-{{ u.id }}" name="full_name" value="{{ u.full_name }}"></td>
-        <td><select class="input" form="u-{{ u.id }}" name="role">{% for k, l in ROLES.items() %}<option value="{{ k }}" {{ 'selected' if u.role == k }}>{{ l }}</option>{% endfor %}</select></td>
+        <td><select class="input" form="u-{{ u.id }}" name="role">{% for k, l in ROLES.items() %}<option value="{{ k }}" {{ 'selected' if u.role == k }}>{{ l|tr }}</option>{% endfor %}</select></td>
         <td><input class="checkbox" form="u-{{ u.id }}" type="checkbox" name="active" value="1" {{ 'checked' if u.active }}></td>
         <td class="text-xs">{{ u.last_login_at|dt }}</td>
-        <td><input class="input" form="u-{{ u.id }}" type="password" name="password" autocomplete="new-password" placeholder="inchangé"></td>
-        <td><form id="u-{{ u.id }}" method="post" action="/admin/users/{{ u.id }}">{{ ui.csrf() }}<button class="btn-secondary btn-sm">Enregistrer</button></form></td></tr>
+        <td><input class="input" form="u-{{ u.id }}" type="password" name="password" autocomplete="new-password" placeholder="{{ _('inchangé') }}"></td>
+        <td><form id="u-{{ u.id }}" method="post" action="/admin/users/{{ u.id }}">{{ ui.csrf() }}<button class="btn-secondary btn-sm">{{ _("Enregistrer") }}</button></form></td></tr>
     {% endfor %}
     </tbody>
   </table></div>
   <form method="post" action="/admin/users" class="mt-5 grid gap-3 border-t border-slate-200 pt-4 dark:border-slate-800 sm:grid-cols-2 lg:grid-cols-5">
     {{ ui.csrf() }}
     {{ ui.field('Identifiant', 'username', required=true) }}{{ ui.field('Nom affiché', 'full_name') }}
-    <label><span class="label">Rôle</span><select class="input" name="role">{% for k, l in ROLES.items() %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></label>
+    <label><span class="label">{{ _("Rôle") }}</span><select class="input" name="role">{% for k, l in ROLES.items() %}<option value="{{ k }}">{{ l|tr }}</option>{% endfor %}</select></label>
     {{ ui.field('Mot de passe provisoire', 'password', type='password', required=true, extra='autocomplete="new-password" minlength="10"') }}
-    <div class="flex items-end"><button class="btn-primary w-full">{{ icon('plus', 'h-4 w-4') }} Créer</button></div>
+    <div class="flex items-end"><button class="btn-primary w-full">{{ icon('plus', 'h-4 w-4') }} {{ _("Créer") }}</button></div>
   </form>
 </section>
 {% endblock %}

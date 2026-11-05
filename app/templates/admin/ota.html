@@ -1,0 +1,91 @@
+{% extends "layout/base.html" %}
+{% import "macros/ui.html" as ui with context %}
+{% block title %}{{ _("Channel manager") }}{% endblock %}
+{% block content %}
+<div><h1 class="page-title">{{ _("Channel manager · OTA") }}</h1>
+  <p class="page-subtitle">{{ _("Clés d'API des canaux (Booking.com, Expedia, Channex…), synchronisation et journal des échanges.") }}</p></div>
+{% include "admin/_nav.html" %}
+
+{% if error %}<div class="flash-error">{{ icon('alert', 'h-5 w-5 shrink-0') }}<span>{{ error|tr }}</span></div>{% endif %}
+{% if new_key %}
+<div class="card border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40">
+  <div class="card-title text-amber-800 dark:text-amber-300">{{ icon('key', 'h-4 w-4') }} {{ _("Nouvelle clé") }} « {{ new_key_name }} »</div>
+  <p class="mb-2 text-sm">{{ _("Copiez-la maintenant : elle ne sera") }} <strong>{{ _("plus jamais affichée") }}</strong> {{ _("(seule son empreinte est conservée).") }}</p>
+  <div class="select-all break-all rounded-lg bg-white px-4 py-3 font-mono text-sm dark:bg-slate-900">{{ new_key }}</div>
+</div>
+{% endif %}
+
+<section class="grid grid-cols-3 gap-4">
+  <div class="kpi"><span class="kpi-label">{{ _("Réservations OTA") }}</span><span class="kpi-value">{{ stats.bookings }}</span></div>
+  <div class="kpi"><span class="kpi-label">{{ _("Appels reçus") }}</span><span class="kpi-value">{{ stats.requests }}</span></div>
+  <div class="kpi"><span class="kpi-label">{{ _("Erreurs") }}</span><span class="kpi-value {{ 'text-rose-600' if stats.errors }}">{{ stats.errors }}</span></div>
+</section>
+
+<section class="card">
+  <div class="card-title">{{ icon('key', 'h-4 w-4') }} {{ _("Clés d'API") }}</div>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>{{ _("Nom") }}</th><th>{{ _("Canal") }}</th><th>{{ _("Clé") }}</th><th>{{ _("Permissions") }}</th><th>{{ _("Dernier appel") }}</th><th>{{ _("État") }}</th><th class="text-right">{{ _("Actions") }}</th></tr></thead>
+    <tbody>
+    {% for k in keys %}
+      <tr class="{{ 'opacity-50' if not k.active }}">
+        <td class="font-medium">{{ k.name }}</td><td>{{ k.channel_label|tr }}</td><td class="font-mono text-xs">{{ k.key_prefix }}…</td>
+        <td class="text-xs">{% for p in k.permission_list %}<span class="badge-slate mr-1">{{ p }}</span>{% endfor %}</td>
+        <td class="text-xs">{{ k.last_used_at|dt }}</td>
+        <td>{% if not k.active %}<span class="badge-red">{{ _("Révoquée") }}</span>{% elif k.sync_enabled %}<span class="badge-green">{{ _("Synchro active") }}</span>{% else %}<span class="badge-amber">{{ _("Synchro suspendue") }}</span>{% endif %}</td>
+        <td><div class="flex justify-end gap-2">{% if k.active %}
+          <form method="post" action="/admin/ota/keys/{{ k.id }}/sync">{{ ui.csrf() }}<button class="btn-secondary btn-sm">{{ _('Suspendre') if k.sync_enabled else _('Réactiver') }}</button></form>
+          <form method="post" action="/admin/ota/keys/{{ k.id }}/revoke" data-confirm="{{ _('Révoquer définitivement cette clé ?') }}">{{ ui.csrf() }}<button class="btn-danger btn-sm">{{ _("Révoquer") }}</button></form>
+        {% endif %}</div></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7">{{ ui.empty("Aucune clé d'API.") }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <form method="post" action="/admin/ota/keys" class="mt-5 grid gap-3 border-t border-slate-200 pt-4 dark:border-slate-800 sm:grid-cols-3">
+    {{ ui.csrf() }}
+    {{ ui.field('Nom de la clé', 'name', required=true, placeholder='Booking.com – production') }}
+    <label><span class="label">{{ _("Canal") }}</span><select class="input" name="channel">{% for k, l in channels.items() %}<option value="{{ k }}">{{ l|tr }}</option>{% endfor %}</select></label>
+    <div class="space-y-1 text-sm">
+      <span class="label">{{ _("Permissions") }}</span>
+      {% for p, l in permissions.items() %}<label class="flex items-center gap-2"><input class="checkbox" type="checkbox" name="perm_{{ p }}" value="1" checked> {{ l|tr }}</label>{% endfor %}
+    </div>
+    <div class="sm:col-span-3"><button class="btn-primary">{{ icon('plus', 'h-4 w-4') }} {{ _("Générer une clé") }}</button></div>
+  </form>
+</section>
+
+<section class="card">
+  <div class="card-title">{{ icon('document', 'h-4 w-4') }} {{ _("Points d'accès") }}</div>
+  <div class="space-y-1 font-mono text-xs">
+    <div><span class="badge-blue">GET</span> /api/v1/ota/inventory?start=AAAA-MM-JJ&amp;end=AAAA-MM-JJ</div>
+    <div><span class="badge-green">POST</span> /api/v1/ota/rates</div>
+    <div><span class="badge-green">POST</span> /api/v1/ota/reservations/webhook</div>
+  </div>
+  <p class="help mt-2">{{ _("Authentification : en-tête") }} <code>X-OTA-API-KEY</code>. {{ _("Schéma détaillé :") }} /admin/openapi.json.</p>
+</section>
+
+<section class="card">
+  <div class="card-title justify-between"><span>{{ icon('clock', 'h-4 w-4') }} {{ _("Journal de synchronisation") }}</span>
+    <form method="get" class="flex gap-2 normal-case">
+      <select class="input" name="channel"><option value="">{{ _("Tous canaux") }}</option>{% for k, l in channels.items() %}<option value="{{ k }}" {{ 'selected' if channel == k }}>{{ l|tr }}</option>{% endfor %}</select>
+      <select class="input" name="status"><option value="">{{ _("Tous") }}</option><option value="errors" {{ 'selected' if status == 'errors' }}>{{ _("Erreurs") }}</option></select>
+      <button class="btn-secondary btn-sm">{{ _("Filtrer") }}</button></form></div>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>{{ _("Date") }}</th><th>{{ _("Canal") }}</th><th>{{ _("Événement") }}</th><th>{{ _("Réf. externe") }}</th><th>HTTP</th><th>{{ _("Réservation") }}</th><th>{{ _("Détail") }}</th></tr></thead>
+    <tbody>
+    {% for log in logs %}
+      <tr><td class="whitespace-nowrap text-xs">{{ log.created_at|dt }}</td>
+        <td class="text-xs">{{ channels.get(log.channel, '—')|tr }}{% if log.api_key_id %}<div class="text-slate-500">{{ key_names.get(log.api_key_id, '') }}</div>{% endif %}</td>
+        <td><span class="badge-slate">{{ log.event }}</span></td><td class="font-mono text-xs">{{ log.external_ref }}</td>
+        <td><span class="{{ 'badge-green' if log.http_status < 300 else ('badge-amber' if log.http_status < 500 else 'badge-red') }}">{{ log.http_status }}</span></td>
+        <td>{% if log.reservation_id %}<a href="/reservations/{{ log.reservation_id }}">{{ _("n°") }} {{ log.reservation_id }}</a>{% endif %}</td>
+        <td class="max-w-md"><details><summary class="cursor-pointer text-xs text-brand-700 dark:text-brand-400">{{ _("Payload / réponse") }}</summary>
+          <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded bg-slate-100 p-2 text-[11px] dark:bg-slate-800">{{ log.payload }}</pre>
+          <pre class="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-slate-100 p-2 text-[11px] dark:bg-slate-800">{{ log.response }}</pre></details></td></tr>
+    {% else %}
+      <tr><td colspan="7">{{ ui.empty("Aucun échange enregistré.") }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}

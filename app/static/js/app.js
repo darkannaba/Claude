@@ -11,12 +11,26 @@
     return Math.round(value).toLocaleString("fr-FR").replace(/ /g, " ") + " DA";
   };
 
+  // ------------------------------------------------------------ internationalisation
+  // Libellés traduits {texte source français: traduction} fournis par layout/base.html dans un bloc JSON
+  // (la CSP n'autorise aucun script en ligne). Repli : le texte source français.
+  var readI18n = function () {
+    var node = document.getElementById("i18n-data");
+    if (!node) return {};
+    try { return JSON.parse(node.textContent || "{}") || {}; } catch (e) { return {}; }
+  };
+  window.I18N = Object.assign({}, readI18n(), window.I18N || {});
+  var t = function (text) {
+    var value = window.I18N[text];
+    return typeof value === "string" && value ? value : text;
+  };
+
   // ------------------------------------------------------------ formulaires
-  // Confirmation (data-confirm) et protection contre la double soumission.
+  // Confirmation (data-confirm, traduit via window.I18N) et protection contre la double soumission.
   document.addEventListener("submit", function (event) {
     var form = event.target;
     var message = form.getAttribute("data-confirm");
-    if (message && !window.confirm(message)) {
+    if (message !== null && !window.confirm(message ? t(message) : t("Confirmer cette action ?"))) {
       event.preventDefault();
       return;
     }
@@ -67,10 +81,10 @@
   var builders = {
     revenue: function (d) {
       var datasets = [
-        { label: "Hébergement", data: d.room, backgroundColor: "#0d9488", stack: "ca", borderRadius: 4 },
-        { label: "Services & POS", data: d.services, backgroundColor: "#38bdf8", stack: "ca", borderRadius: 4 }
+        { label: t("Hébergement"), data: d.room, backgroundColor: "#0d9488", stack: "ca", borderRadius: 4 },
+        { label: t("Services & POS"), data: d.services, backgroundColor: "#38bdf8", stack: "ca", borderRadius: 4 }
       ];
-      if (d.tax) datasets.push({ label: "Taxe de séjour", data: d.tax, backgroundColor: "#f59e0b", stack: "ca", borderRadius: 4 });
+      if (d.tax) datasets.push({ label: t("Taxe de séjour"), data: d.tax, backgroundColor: "#f59e0b", stack: "ca", borderRadius: 4 });
       return {
         type: "bar",
         data: { labels: d.labels, datasets: datasets },
@@ -87,16 +101,16 @@
         data: {
           labels: d.labels,
           datasets: [
-            { label: "Taux d'occupation (%)", data: d.occupancy, borderColor: "#0d9488", backgroundColor: "rgba(13,148,136,.15)", fill: true, tension: 0.3, yAxisID: "y" },
-            { label: "ADR (DA)", data: d.adr, borderColor: "#6366f1", tension: 0.3, yAxisID: "y1" },
-            { label: "RevPAR (DA)", data: d.revpar, borderColor: "#f59e0b", tension: 0.3, yAxisID: "y1" }
+            { label: t("Taux d'occupation (%)"), data: d.occupancy, borderColor: "#0d9488", backgroundColor: "rgba(13,148,136,.15)", fill: true, tension: 0.3, yAxisID: "y" },
+            { label: t("ADR (DA)"), data: d.adr, borderColor: "#6366f1", tension: 0.3, yAxisID: "y1" },
+            { label: t("RevPAR (DA)"), data: d.revpar, borderColor: "#f59e0b", tension: 0.3, yAxisID: "y1" }
           ]
         },
         options: {
           responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
           plugins: { legend: { position: "bottom" } },
           scales: {
-            y: { min: 0, max: 100, title: { display: true, text: "TO %" } },
+            y: { min: 0, max: 100, title: { display: true, text: t("TO %") } },
             y1: { position: "right", grid: { drawOnChartArea: false }, ticks: { callback: function (v) { return formatDA(v); } } }
           }
         }

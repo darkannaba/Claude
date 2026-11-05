@@ -55,6 +55,12 @@ class HotelSettings(BaseModel):
     auto_no_show: bool = _field(True, "Passer en no-show les arrivées non présentées lors de l'audit",
                                 "Clôture & sauvegarde")
     backup_hour: int = _field(3, "Heure de la sauvegarde automatique (0-23)", "Clôture & sauvegarde", ge=0, le=23)
+    backup_local_enabled: bool = _field(True, "Sauvegarde automatique sur disque local", "Clôture & sauvegarde")
+    backup_drive_enabled: bool = _field(False, "Sauvegarde automatique sur Google Drive", "Clôture & sauvegarde")
+    backup_retention_days: int = _field(30, "Rétention des sauvegardes (jours)", "Clôture & sauvegarde", ge=1, le=3650)
+    backup_drive_folder_id: str = _field("", "Google Drive – identifiant du dossier de destination",
+                                         "Clôture & sauvegarde", "Partie finale de l'URL du dossier Drive. Vide = racine.",
+                                         max_length=120)
     # Facturation
     invoice_prefix: str = _field("FAC", "Préfixe des factures", "Facturation", min_length=1, max_length=10)
     pos_prefix: str = _field("POS", "Préfixe des additions", "Facturation", min_length=1, max_length=10)
@@ -167,12 +173,7 @@ async def save_hotel_settings(db: AsyncSession, form: dict[str, str]) -> HotelSe
     try:
         validated = HotelSettings.model_validate(current)
     except ValidationError as exc:
-        messages = []
-        for err in exc.errors():
-            name = err["loc"][0] if err.get("loc") else "?"
-            title = HotelSettings.model_fields[name].title if name in HotelSettings.model_fields else name
-            messages.append(f"{title} : {err['msg']}")
-        raise BusinessError("Paramètres invalides – " + " ; ".join(messages)) from exc
+        raise BusinessError(_validation_message(exc)) from exc
 
     existing = {r.key: r for r in (await db.scalars(select(Setting))).all()}
     for name, value in validated.model_dump().items():
@@ -180,6 +181,43 @@ async def save_hotel_settings(db: AsyncSession, form: dict[str, str]) -> HotelSe
             existing[name].value = _serialize(value)
         else:
             db.add(Setting(key=name, value=_serialize(value)))
+    return validated
+
+
+def _validation_message(exc: ValidationError) -> str:
+    messages = []
+    for err in exc.errors():
+        name = err["loc"][0] if err.get("loc") else "?"
+        title = HotelSettings.model_fields[name].title if name in HotelSettings.model_fields else name
+        messages.append(f"{title} : {err['msg']}")
+    return "Paramètres invalides – " + " ; ".join(messages)
+
+
+async def save_settings_subset(db: AsyncSession, values: dict[str, Any]) -> HotelSettings:
+    """Enregistre uniquement les clés fournies, sans toucher aux autres paramètres.
+
+    Contrairement à ``save_hotel_settings`` (formulaire complet : toute case absente est décochée), un booléen
+    absent de ``values`` reste inchangé. Les valeurs peuvent être typées (bool, int) ou textuelles (formulaire).
+    """
+    unknown = sorted(name for name in values if name not in HotelSettings.model_fields)
+    if unknown:
+        raise BusinessError("Paramètre inconnu : " + ", ".join(unknown))
+    current = (await load_hotel_settings(db)).model_dump()
+    for name, value in values.items():
+        current[name] = _deserialize(name, value.strip()) if isinstance(value, str) else value
+    try:
+        validated = HotelSettings.model_validate(current)
+    except ValidationError as exc:
+        raise BusinessError(_validation_message(exc)) from exc
+
+    rows = (await db.scalars(select(Setting).where(Setting.key.in_(list(values))))).all()
+    existing = {r.key: r for r in rows}
+    for name in values:
+        serialized = _serialize(getattr(validated, name))
+        if name in existing:
+            existing[name].value = serialized
+        else:
+            db.add(Setting(key=name, value=serialized))
     return validated
 
 

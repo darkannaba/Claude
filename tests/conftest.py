@@ -14,6 +14,7 @@ os.environ.update({
     "LOG_DIR": str(_TMP / "logs"),
     "DATA_DIR": str(_TMP / "data"),
     "ENVIRONMENT": "test",
+    "LICENSE_ENFORCED": "false",  # activé explicitement dans tests/test_licensing.py
 })
 
 import pytest  # noqa: E402

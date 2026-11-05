@@ -20,3 +20,10 @@ logs/
 # Fichiers générés
 *.pdf
 *.log
+
+# Clé privée de l'éditeur (licences) : ne jamais versionner
+publisher_keys/
+*_private_key.pem
+
+# Identifiants Google Drive (sauvegardes) : secrets, jamais versionnés
+data/google/

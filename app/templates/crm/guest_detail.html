@@ -4,47 +4,47 @@
 {% block content %}
 <div class="flex flex-wrap items-start justify-between gap-3">
   <div>
-    <div class="text-sm text-slate-500"><a href="/guests">Clients</a> / Fiche n° {{ guest.id }}</div>
+    <div class="text-sm text-slate-500"><a href="/guests">{{ _("Clients") }}</a> / {{ _("Fiche n°") }} {{ guest.id }}</div>
     <h1 class="page-title flex flex-wrap items-center gap-2">{{ guest.full_name }}
       {% if guest.full_name_ar %}<span class="ar text-lg font-normal text-slate-500" dir="rtl">{{ guest.full_name_ar }}</span>{% endif %}
       {{ ui.guest_badge(guest) }}</h1>
-    <p class="page-subtitle">Client depuis le {{ guest.created_at|date }}</p>
+    <p class="page-subtitle">{{ _("Client depuis le") }} {{ guest.created_at|date }}</p>
   </div>
-  <a class="btn-primary" href="/reservations/new?guest_id={{ guest.id }}">{{ icon('plus', 'h-4 w-4') }} Nouvelle réservation</a>
+  <a class="btn-primary" href="/reservations/new?guest_id={{ guest.id }}">{{ icon('plus', 'h-4 w-4') }} {{ _("Nouvelle réservation") }}</a>
 </div>
 {{ ui.alerts_list(alerts) }}
 <section class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-  <div class="kpi"><span class="kpi-label">Séjours</span><span class="kpi-value">{{ stays|length }}</span></div>
-  <div class="kpi"><span class="kpi-label">Nuitées</span><span class="kpi-value">{{ nights }}</span></div>
-  <div class="kpi"><span class="kpi-label">Dépenses cumulées</span><span class="kpi-value">{{ spent|money }}</span></div>
-  <div class="kpi"><span class="kpi-label">Pièce d'identité</span><span class="text-sm font-semibold">{{ guest.id_type_label }}</span><span class="kpi-sub font-mono">{{ guest.id_number or 'non renseignée' }}</span></div>
+  <div class="kpi"><span class="kpi-label">{{ _("Séjours") }}</span><span class="kpi-value">{{ stays|length }}</span></div>
+  <div class="kpi"><span class="kpi-label">{{ _("Nuitées") }}</span><span class="kpi-value">{{ nights }}</span></div>
+  <div class="kpi"><span class="kpi-label">{{ _("Dépenses cumulées") }}</span><span class="kpi-value">{{ spent|money }}</span></div>
+  <div class="kpi"><span class="kpi-label">{{ _("Pièce d'identité") }}</span><span class="text-sm font-semibold">{{ guest.id_type_label|tr }}</span><span class="kpi-sub font-mono">{{ guest.id_number or _("non renseignée") }}</span></div>
 </section>
 <div class="grid gap-5 xl:grid-cols-3">
   <form method="post" action="/guests/{{ guest.id }}" class="card space-y-5 xl:col-span-2">
     {{ ui.csrf() }}
-    <div class="card-title">{{ icon('id', 'h-4 w-4') }} Fiche client</div>
+    <div class="card-title">{{ icon('id', 'h-4 w-4') }} {{ _("Fiche client") }}</div>
     {% include "crm/_guest_fields.html" %}
-    <div class="flex justify-end"><button class="btn-primary">{{ icon('check', 'h-4 w-4') }} Enregistrer</button></div>
+    <div class="flex justify-end"><button class="btn-primary">{{ icon('check', 'h-4 w-4') }} {{ _("Enregistrer") }}</button></div>
   </form>
   <aside class="space-y-5">
     <section class="card">
-      <div class="card-title">{{ icon('star', 'h-4 w-4') }} Statut</div>
+      <div class="card-title">{{ icon('star', 'h-4 w-4') }} {{ _("Statut") }}</div>
       <form method="post" action="/guests/{{ guest.id }}/status" class="space-y-3">{{ ui.csrf() }}
         <select class="input" name="status">
-          {% for k, l in GUEST_STATUSES.items() %}{% if k != 'blacklist' or user.role == 'admin' or guest.status == 'blacklist' %}<option value="{{ k }}" {{ 'selected' if guest.status == k }}>{{ l }}</option>{% endif %}{% endfor %}
+          {% for k, l in GUEST_STATUSES.items() %}{% if k != 'blacklist' or user.role == 'admin' or guest.status == 'blacklist' %}<option value="{{ k }}" {{ 'selected' if guest.status == k }}>{{ l|tr }}</option>{% endif %}{% endfor %}
         </select>
-        <input class="input" name="reason" value="{{ guest.status_reason }}" placeholder="Motif / commentaire">
-        <button class="btn-secondary btn-sm">Mettre à jour</button>
-        <p class="help">La liste noire est réservée à l'administrateur et bloque les réservations et arrivées.</p>
+        <input class="input" name="reason" value="{{ guest.status_reason }}" placeholder="{{ _('Motif / commentaire') }}">
+        <button class="btn-secondary btn-sm">{{ _("Mettre à jour") }}</button>
+        <p class="help">{{ _("La liste noire est réservée à l'administrateur et bloque les réservations et arrivées.") }}</p>
       </form>
     </section>
     <section class="card">
-      <div class="card-title">{{ icon('clock', 'h-4 w-4') }} Historique des séjours</div>
+      <div class="card-title">{{ icon('clock', 'h-4 w-4') }} {{ _("Historique des séjours") }}</div>
       <ul class="divide-y divide-slate-100 text-sm dark:divide-slate-800">
         {% for r in stays %}
           <li class="py-2"><div class="flex items-center justify-between"><a href="/reservations/{{ r.id }}" class="font-mono">{{ r.code }}</a>{{ ui.res_badge(r.status) }}</div>
-            <div class="text-xs text-slate-500">{{ r.check_in|date }} → {{ r.check_out|date }} · ch. {{ r.room.number }} · {{ r.nights }} nuit(s)</div></li>
-        {% else %}<li class="py-2 text-slate-500">Aucun séjour.</li>{% endfor %}
+            <div class="text-xs text-slate-500">{{ r.check_in|date }} → {{ r.check_out|date }} · {{ _("ch.") }} {{ r.room.number }} · {{ r.nights }} {{ _("nuit(s)") }}</div></li>
+        {% else %}<li class="py-2 text-slate-500">{{ _("Aucun séjour.") }}</li>{% endfor %}
       </ul>
     </section>
   </aside>

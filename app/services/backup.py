@@ -44,6 +44,28 @@ def backup_root() -> Path:
     return config.backup_dir
 
 
+def _copy_database(source_file: Path, target_file: Path) -> None:
+    """Copie page à page via l'API de sauvegarde SQLite : cohérente même pendant l'utilisation (mode WAL)."""
+    source = sqlite3.connect(source_file)
+    destination = sqlite3.connect(target_file)
+    try:
+        source.backup(destination)
+    finally:
+        destination.close()
+        source.close()
+
+
+def snapshot_database(target: Path) -> None:
+    """Instantané cohérent de la base vivante dans ``target``."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _copy_database(_db_path(), target)
+
+
+def write_database(source_file: Path) -> None:
+    """Remplace le contenu de la base vivante par celui de ``source_file`` (fichier déjà validé)."""
+    _copy_database(source_file, _db_path())
+
+
 def create_backup(reason: str = "manuelle", when: datetime | None = None) -> BackupInfo:
     """Copie cohérente de la base dans backups/AAAA-MM-JJ_HHMMSS/hotel.db (+ meta.json)."""
     when = when or datetime.now()
@@ -54,14 +76,7 @@ def create_backup(reason: str = "manuelle", when: datetime | None = None) -> Bac
         folder = backup_root() / f"{base_name}-{suffix}"
         suffix += 1
     folder.mkdir(parents=True)
-    target = folder / "hotel.db"
-    source = sqlite3.connect(_db_path())
-    destination = sqlite3.connect(target)
-    try:
-        source.backup(destination)
-    finally:
-        destination.close()
-        source.close()
+    snapshot_database(folder / "hotel.db")
     (folder / "meta.json").write_text(
         json.dumps({"created_at": when.isoformat(timespec="seconds"), "reason": reason}, ensure_ascii=False),
         encoding="utf-8")
@@ -135,13 +150,7 @@ def restore_from_file(path: Path) -> BackupInfo:
     """Restaure la base depuis un fichier validé ; une sauvegarde de sécurité est faite avant."""
     validate_database_file(path)
     safety = create_backup("avant restauration")
-    source = sqlite3.connect(path)
-    destination = sqlite3.connect(_db_path())
-    try:
-        source.backup(destination)
-    finally:
-        destination.close()
-        source.close()
+    write_database(path)
     return safety
 
 

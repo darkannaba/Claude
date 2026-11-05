@@ -1,32 +1,32 @@
 {% extends "layout/base.html" %}
 {% import "macros/ui.html" as ui with context %}
-{% block title %}Clients{% endblock %}
+{% block title %}{{ _("Clients") }}{% endblock %}
 {% block content %}
 <div class="flex flex-wrap items-end justify-between gap-3">
-  <div><h1 class="page-title">Clients</h1><p class="page-subtitle">Carnet d'adresses et registre des voyageurs</p></div>
+  <div><h1 class="page-title">{{ _("Clients") }}</h1><p class="page-subtitle">{{ _("Carnet d'adresses et registre des voyageurs") }}</p></div>
   <div class="flex flex-wrap gap-2">
-    <a class="btn-secondary" href="/guests/duplicates">{{ icon('users', 'h-4 w-4') }} Doublons</a>
-    <a class="btn-secondary" href="/guests/unpaid">{{ icon('alert', 'h-4 w-4') }} Impayés</a>
-    <a class="btn-secondary" href="/companies">{{ icon('building', 'h-4 w-4') }} Entreprises</a>
-    <a class="btn-primary" href="/guests/new">{{ icon('plus', 'h-4 w-4') }} Nouveau client</a>
+    <a class="btn-secondary" href="/guests/duplicates">{{ icon('users', 'h-4 w-4') }} {{ _("Doublons") }}</a>
+    <a class="btn-secondary" href="/guests/unpaid">{{ icon('alert', 'h-4 w-4') }} {{ _("Impayés") }}</a>
+    <a class="btn-secondary" href="/companies">{{ icon('building', 'h-4 w-4') }} {{ _("Entreprises") }}</a>
+    <a class="btn-primary" href="/guests/new">{{ icon('plus', 'h-4 w-4') }} {{ _("Nouveau client") }}</a>
   </div>
 </div>
 <form method="get" action="/guests" class="card flex flex-wrap items-end gap-3">
-  <label class="min-w-[16rem] flex-1"><span class="label">Recherche : nom (latin ou arabe), téléphone, email, n° de pièce – scanner + Entrée</span>
+  <label class="min-w-[16rem] flex-1"><span class="label">{{ _("Recherche : nom (latin ou arabe), téléphone, email, n° de pièce – scanner + Entrée") }}</span>
     <input class="input" name="q" value="{{ q }}" autofocus autocomplete="off"></label>
-  <label><span class="label">Statut</span><select class="input" name="status"><option value="">Tous</option>
-    {% for k, l in GUEST_STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if status == k }}>{{ l }}</option>{% endfor %}</select></label>
-  <button class="btn-primary">{{ icon('search', 'h-4 w-4') }} Rechercher</button>
+  <label><span class="label">{{ _("Statut") }}</span><select class="input" name="status"><option value="">{{ _("Tous") }}</option>
+    {% for k, l in GUEST_STATUSES.items() %}<option value="{{ k }}" {{ 'selected' if status == k }}>{{ l|tr }}</option>{% endfor %}</select></label>
+  <button class="btn-primary">{{ icon('search', 'h-4 w-4') }} {{ _("Rechercher") }}</button>
 </form>
 <div class="card"><div class="table-wrap"><table class="table">
-  <thead><tr><th>Nom</th><th>Téléphone</th><th>Nationalité</th><th>Pièce d'identité</th><th>Entreprise</th><th>Statut</th></tr></thead>
+  <thead><tr><th>{{ _("Nom") }}</th><th>{{ _("Téléphone") }}</th><th>{{ _("Nationalité") }}</th><th>{{ _("Pièce d'identité") }}</th><th>{{ _("Entreprise") }}</th><th>{{ _("Statut") }}</th></tr></thead>
   <tbody>
   {% for g in guests %}
     <tr>
       <td><a href="/guests/{{ g.id }}" class="font-medium">{{ g.last_name|upper }} {{ g.first_name }}</a>
         {% if g.full_name_ar %}<div class="ar text-xs text-slate-500" dir="rtl">{{ g.full_name_ar }}</div>{% endif %}</td>
       <td>{{ g.phone or '—' }}</td><td>{{ g.nationality }}</td>
-      <td class="text-xs">{{ g.id_type_label }}<div class="font-mono">{{ g.id_number or '—' }}</div></td>
+      <td class="text-xs">{{ g.id_type_label|tr }}<div class="font-mono">{{ g.id_number or '—' }}</div></td>
       <td>{{ g.company.name if g.company else '—' }}</td>
       <td>{{ ui.guest_badge(g) or '' }}</td>
     </tr>

@@ -89,7 +89,7 @@ async def create_reservation(
     db: AsyncSession, *, guest: Guest, room: Room, check_in: date, check_out: date, hs: HotelSettings,
     user: User | None, adults: int = 1, children: int = 0, company: Company | None = None,
     channel: str = "Direct", coming_from: str = "", going_to: str = "", notes: str = "",
-    allow_blacklisted: bool = False,
+    allow_blacklisted: bool = False, nightly_rate_override: int | None = None,
 ) -> Reservation:
     if guest.is_blacklisted and not allow_blacklisted:
         raise BusinessError(f"Client sur liste noire : {guest.status_reason or 'motif non précisé'}. "
@@ -106,7 +106,7 @@ async def create_reservation(
         guest=guest, room=room, room_type=room.room_type, company=company,
         check_in=check_in, check_out=check_out, adults=adults, children=children, status="confirmed",
         channel=channel or "Direct", coming_from=coming_from, going_to=going_to, notes=notes,
-        created_by_id=user.id if user else None, created_at=now,
+        nightly_rate_override=nightly_rate_override, created_by_id=user.id if user else None, created_at=now,
     )
     # Collections initialisées explicitement : en asynchrone, un accès ultérieur ne doit jamais
     # déclencher de chargement paresseux (acompte saisi à la création, par exemple).

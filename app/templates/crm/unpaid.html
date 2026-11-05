@@ -1,12 +1,12 @@
 {% extends "layout/base.html" %}
 {% import "macros/ui.html" as ui with context %}
-{% block title %}Impayés{% endblock %}
+{% block title %}{{ _("Impayés") }}{% endblock %}
 {% block content %}
-<div><div class="text-sm text-slate-500"><a href="/guests">Clients</a> / Impayés</div>
-  <h1 class="page-title">Séjours clôturés avec solde impayé</h1>
-  <p class="page-subtitle">Total dû : <strong>{{ total|money }}</strong>. Ces clients sont signalés automatiquement lors d'une nouvelle réservation.</p></div>
+<div><div class="text-sm text-slate-500"><a href="/guests">{{ _("Clients") }}</a> / {{ _("Impayés") }}</div>
+  <h1 class="page-title">{{ _("Séjours clôturés avec solde impayé") }}</h1>
+  <p class="page-subtitle">{{ _("Total dû :") }} <strong>{{ total|money }}</strong>. {{ _("Ces clients sont signalés automatiquement lors d'une nouvelle réservation.") }}</p></div>
 <div class="card"><div class="table-wrap"><table class="table">
-  <thead><tr><th>Réservation</th><th>Client</th><th>Entreprise</th><th>Départ</th><th>Facture</th><th class="num">Solde dû</th></tr></thead>
+  <thead><tr><th>{{ _("Réservation") }}</th><th>{{ _("Client") }}</th><th>{{ _("Entreprise") }}</th><th>{{ _("Départ") }}</th><th>{{ _("Facture") }}</th><th class="num">{{ _("Solde dû") }}</th></tr></thead>
   <tbody>
   {% for res, balance in rows %}
     <tr><td><a href="/reservations/{{ res.id }}" class="font-mono">{{ res.code }}</a></td>

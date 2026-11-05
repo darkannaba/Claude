@@ -1,45 +1,57 @@
 {# Macros d'interface – importer avec : {% import "macros/ui.html" as ui with context %} #}
+{# Libellés : _("Texte source") pour les textes statiques, |tr pour les libellés dynamiques (statuts, dictionnaires). #}
 
 {% macro csrf() -%}
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 {%- endmacro %}
 
+{% macro lang_switcher(variant='light') -%}
+<form method="post" action="/lang" class="flex items-center gap-0.5 rounded-lg border p-0.5 text-xs font-semibold {{ 'border-white/20 bg-white/10 text-slate-200' if variant == 'dark' else 'border-slate-200 bg-white text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400' }}" aria-label="{{ _('Langue') }}">
+  {{ csrf() }}
+  <input type="hidden" name="next" value="{{ current_url or current_path or '/' }}">
+  {% for code, name in LANGS.items() %}
+    <button type="submit" name="lang" value="{{ code }}" title="{{ name }}" {% if code == lang %}aria-current="true"{% endif %}
+            class="rounded-md px-2 py-1 leading-none transition {{ 'bg-brand-600 text-white' if code == lang else ('hover:bg-white/20 hover:text-white' if variant == 'dark' else 'hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-700 dark:hover:text-white') }}">{{ code|upper }}</button>
+  {% endfor %}
+</form>
+{%- endmacro %}
+
 {% macro res_badge(status) -%}
 {%- set colors = {'confirmed': 'badge-blue', 'checked_in': 'badge-teal', 'checked_out': 'badge-slate', 'cancelled': 'badge-red', 'no_show': 'badge-amber'} -%}
-<span class="{{ colors.get(status, 'badge-slate') }}">{{ RES_STATUSES.get(status, status) }}</span>
+<span class="{{ colors.get(status, 'badge-slate') }}">{{ RES_STATUSES.get(status, status)|tr }}</span>
 {%- endmacro %}
 
 {% macro room_badge(status) -%}
 {%- set colors = {'available': 'badge-green', 'occupied': 'badge-blue', 'dirty': 'badge-amber', 'maintenance': 'badge-red'} -%}
-<span class="{{ colors.get(status, 'badge-slate') }}">{{ ROOM_STATUSES.get(status, status) }}</span>
+<span class="{{ colors.get(status, 'badge-slate') }}">{{ ROOM_STATUSES.get(status, status)|tr }}</span>
 {%- endmacro %}
 
 {% macro guest_badge(guest) -%}
-{%- if guest.status == 'vip' -%}<span class="badge-violet">{{ icon('star', 'h-3 w-3') }} VIP</span>
-{%- elif guest.status == 'blacklist' -%}<span class="badge-red">{{ icon('ban', 'h-3 w-3') }} Liste noire</span>
+{%- if guest.status == 'vip' -%}<span class="badge-violet">{{ icon('star', 'h-3 w-3') }} {{ _("VIP") }}</span>
+{%- elif guest.status == 'blacklist' -%}<span class="badge-red">{{ icon('ban', 'h-3 w-3') }} {{ _("Liste noire") }}</span>
 {%- endif -%}
 {%- endmacro %}
 
 {% macro order_badge(status) -%}
 {%- set colors = {'open': 'badge-amber', 'paid': 'badge-green', 'room_charge': 'badge-teal', 'void': 'badge-slate'} -%}
-<span class="{{ colors.get(status, 'badge-slate') }}">{{ ORDER_STATUSES.get(status, status) }}</span>
+<span class="{{ colors.get(status, 'badge-slate') }}">{{ ORDER_STATUSES.get(status, status)|tr }}</span>
 {%- endmacro %}
 
 {% macro field(label, name, value='', type='text', required=false, placeholder='', extra='', help='') -%}
 <label class="block">
-  <span class="label">{{ label }}{% if required %} <span class="text-rose-500">*</span>{% endif %}</span>
+  <span class="label">{{ label|tr }}{% if required %} <span class="text-rose-500">*</span>{% endif %}</span>
   <input class="input" type="{{ type }}" name="{{ name }}" value="{{ '' if value is none else value }}"
-         {% if required %}required{% endif %} {% if placeholder %}placeholder="{{ placeholder }}"{% endif %} {{ extra|safe }}>
-  {% if help %}<span class="help">{{ help }}</span>{% endif %}
+         {% if required %}required{% endif %} {% if placeholder %}placeholder="{{ placeholder|tr }}"{% endif %} {{ extra|safe }}>
+  {% if help %}<span class="help">{{ help|tr }}</span>{% endif %}
 </label>
 {%- endmacro %}
 
 {% macro select(label, name, options, selected='', required=false, extra='') -%}
 <label class="block">
-  <span class="label">{{ label }}</span>
+  <span class="label">{{ label|tr }}</span>
   <select class="input" name="{{ name }}" {% if required %}required{% endif %} {{ extra|safe }}>
     {% for value, text in options %}
-      <option value="{{ value }}" {% if value|string == selected|string %}selected{% endif %}>{{ text }}</option>
+      <option value="{{ value }}" {% if value|string == selected|string %}selected{% endif %}>{{ text|tr }}</option>
     {% endfor %}
   </select>
 </label>
@@ -47,14 +59,14 @@
 
 {% macro alerts_list(alerts) -%}
 {% for alert in alerts %}
-  <div class="flash-{{ alert.level }}">{{ icon('alert', 'h-5 w-5 shrink-0') }}<span>{{ alert.message }}</span></div>
+  <div class="flash-{{ alert.level }}">{{ icon('alert', 'h-5 w-5 shrink-0') }}<span>{{ alert.message|tr }}</span></div>
 {% endfor %}
 {%- endmacro %}
 
 {% macro print_link(doc, label, back, cls='btn-secondary') -%}
-<a class="{{ cls }}" href="/print?doc={{ doc|urlencode }}&back={{ back|urlencode }}">{{ icon('printer', 'h-4 w-4') }} {{ label }}</a>
+<a class="{{ cls }}" href="/print?doc={{ doc|urlencode }}&back={{ back|urlencode }}">{{ icon('printer', 'h-4 w-4') }} {{ label|tr }}</a>
 {%- endmacro %}
 
 {% macro empty(message) -%}
-<div class="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">{{ message }}</div>
+<div class="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">{{ message|tr }}</div>
 {%- endmacro %}

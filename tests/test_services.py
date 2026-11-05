@@ -1,7 +1,7 @@
 """Règles métier testées au niveau des services (sans HTTP)."""
 import socket
 import threading
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -137,7 +137,8 @@ async def test_night_audit_freezes_prices_against_later_rate_changes(db):
     folio = build_folio(res, hs, calendar)
     posted_after = sorted(line.amount for line in folio.lines if line.kind == "room" and line.posted)
     assert posted_after == posted_before                 # les nuits figées ne bougent pas
-    assert any(line.amount == 99999 for line in folio.lines if not line.posted)  # seules les nuits futures suivent
+    future = [line for line in folio.lines if not line.posted and line.kind == "room"]
+    assert future and all(line.amount >= 99999 for line in future)  # seules les nuits futures suivent (week-end inclus)
 
     # Départ : nuits restantes figées au nouveau tarif, facture définitive verrouillée
     await booking.add_payment(db, res, amount=500000, kind="paiement", method="virement", hs=hs, user=None)
@@ -411,30 +412,41 @@ async def test_invoice_receipt_for_proforma(db):
 
 
 # ---------------------------------------------------------------- planificateur, sauvegardes, seed
-async def test_scheduler_tick_runs_audit_and_backup(db, monkeypatch):
+async def test_scheduler_tick_runs_audit_and_skips_disabled_backup(db, monkeypatch):
+    """L'audit de nuit automatique est inchangé ; sans destination activée, aucune sauvegarde automatique.
+
+    Le déclenchement des sauvegardes (local, Drive, réessais) est testé dans tests/test_backup.py.
+    """
     hs = await load_hotel_settings(db)
     hs_dict = hs.model_dump()
-    hs_dict.update(night_audit_hour=0, backup_hour=0)
+    hs_dict.update(night_audit_hour=0, backup_hour=0, backup_local_enabled=False, backup_drive_enabled=False)
 
     async def fake_settings(_db):
         return HotelSettings(**hs_dict)
 
     monkeypatch.setattr(scheduler, "load_hotel_settings", fake_settings)
-    monkeypatch.setattr(scheduler.backup, "has_backup_on", lambda day, reason="automatique": False)
     summary = await scheduler.tick()
-    assert summary["backup"]
+    assert summary["backup"] is None
     assert isinstance(summary["audits"], int)
     assert not (await night_audit.pending_audit_dates(db, hs))
 
 
-def test_backup_prune_and_validation(tmp_dir):
-    first = backup.create_backup("automatique")
+def test_backup_cli_snapshot_prune_and_validation(tmp_dir):
+    """Module historique ``backup`` (ligne de commande scripts/backup.py) : instantané, rotation, validation."""
+    first = backup.create_backup("automatique", datetime.now() - timedelta(minutes=2))  # horodatages distincts
     second = backup.create_backup("automatique")
     assert backup.has_backup_on(second.created_at.date())
     removed = backup.prune_backups(1)
     remaining = [b for b in backup.list_backups() if b.reason == "automatique"]
     assert removed >= 1 and len(remaining) == 1 and first.name not in {b.name for b in remaining}
     assert second.size_label.endswith(("o", "Ko", "Mo"))
+    snapshot = tmp_dir / "instantane.db"
+    backup.snapshot_database(snapshot)
+    backup.validate_database_file(snapshot)  # cohérent et complet
+    bogus = tmp_dir / "bidon.db"
+    bogus.write_bytes(b"pas une base")
+    with pytest.raises(BusinessError, match="SQLite"):
+        backup.validate_database_file(bogus)
     with pytest.raises(BusinessError):
         backup.get_backup("../x")
     with pytest.raises(BusinessError):

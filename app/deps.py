@@ -70,6 +70,8 @@ async def csrf_protect(request: Request) -> None:
     """Toute requête modifiante doit porter le jeton CSRF de la session (champ de formulaire ou en-tête)."""
     if request.method not in UNSAFE_METHODS:
         return
+    if request.url.path.startswith("/api/v1/"):
+        return  # API machine-à-machine authentifiée par clé (en-tête), sans cookie de session : pas de CSRF
     token = request.headers.get(CSRF_HEADER)
     if not token:
         content_type = request.headers.get("content-type", "")

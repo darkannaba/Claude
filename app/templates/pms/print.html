@@ -1,17 +1,17 @@
 {% extends "layout/base.html" %}
 {% import "macros/ui.html" as ui with context %}
-{% block title %}Impression{% endblock %}
+{% block title %}{{ _("Impression") }}{% endblock %}
 {% block content %}
 <div class="flex flex-wrap items-center justify-between gap-3 no-print">
-  <div><h1 class="page-title">Impression</h1>
-    <p class="page-subtitle">La boîte d'impression s'ouvre automatiquement : choisissez l'imprimante A4 ou thermique 80 mm.</p></div>
+  <div><h1 class="page-title">{{ _("Impression") }}</h1>
+    <p class="page-subtitle">{{ _("La boîte d'impression s'ouvre automatiquement : choisissez l'imprimante A4 ou thermique 80 mm.") }}</p></div>
   <div class="flex gap-2">
-    <button type="button" id="print-again" class="btn-primary">{{ icon('printer', 'h-4 w-4') }} Imprimer</button>
-    <a class="btn-secondary" href="{{ doc }}" target="_blank">{{ icon('download', 'h-4 w-4') }} Ouvrir le PDF</a>
-    <a class="btn-secondary" href="{{ back }}">Retour</a>
+    <button type="button" id="print-again" class="btn-primary">{{ icon('printer', 'h-4 w-4') }} {{ _("Imprimer") }}</button>
+    <a class="btn-secondary" href="{{ doc }}" target="_blank">{{ icon('download', 'h-4 w-4') }} {{ _("Ouvrir le PDF") }}</a>
+    <a class="btn-secondary" href="{{ back }}">{{ _("Retour") }}</a>
   </div>
 </div>
 <div class="card p-0">
-  <iframe id="print-frame" src="{{ doc }}" title="Document à imprimer" class="h-[78vh] w-full rounded-xl"></iframe>
+  <iframe id="print-frame" src="{{ doc }}" title="{{ _('Document à imprimer') }}" class="h-[78vh] w-full rounded-xl"></iframe>
 </div>
 {% endblock %}

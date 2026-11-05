@@ -1,0 +1,20 @@
+{
+  "Hébergement": "الإقامة",
+  "Services & POS": "الخدمات ونقاط البيع",
+  "Taxe de séjour": "رسم الإقامة",
+  "Taux d'occupation (%)": "نسبة الإشغال (%)",
+  "ADR (DA)": "متوسط سعر الغرفة (دج)",
+  "RevPAR (DA)": "الإيراد لكل غرفة متاحة (دج)",
+  "TO %": "الإشغال %",
+  "Confirmer cette action ?": "هل تؤكد هذا الإجراء؟",
+  "Annuler cette réservation ?": "هل تريد إلغاء هذا الحجز؟",
+  "Déclarer un no-show ?": "هل تريد تسجيل عدم الحضور؟",
+  "Clôturer le séjour ? Les nuits seront figées et la facture définitive émise.": "هل تريد إنهاء الإقامة؟ سيتم تثبيت الليالي وإصدار الفاتورة النهائية.",
+  "Clôturer cette journée ? Les nuitées seront figées.": "هل تريد إغلاق هذا اليوم؟ سيتم تثبيت الليالي.",
+  "Clôturer toutes les journées en attente ?": "هل تريد إغلاق جميع الأيام المعلقة؟",
+  "Retirer cet accompagnateur ?": "هل تريد إزالة هذا المرافق؟",
+  "Supprimer ce tarif ?": "هل تريد حذف هذه التعريفة؟",
+  "Annuler cette écriture ?": "هل تريد إلغاء هذا القيد؟",
+  "Annuler cette addition ?": "هل تريد إلغاء هذا الحساب؟",
+  "Révoquer définitivement cette clé ?": "هل تريد إبطال هذا المفتاح نهائيًا؟"
+}

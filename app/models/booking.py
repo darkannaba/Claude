@@ -31,6 +31,8 @@ class Reservation(Base):
     status: Mapped[str] = mapped_column(String(20), default="confirmed", index=True)
     company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id", ondelete="SET NULL"), nullable=True)
     channel: Mapped[str] = mapped_column(String(40), default="Direct")
+    # Prix par nuit imposé par un canal OTA (Booking.com, Expedia…) : remplace le calendrier tarifaire
+    nightly_rate_override: Mapped[int | None] = mapped_column(Integer, nullable=True)
     coming_from: Mapped[str] = mapped_column(String(120), default="")
     going_to: Mapped[str] = mapped_column(String(120), default="")
     notes: Mapped[str] = mapped_column(Text, default="")

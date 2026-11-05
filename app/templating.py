@@ -16,6 +16,7 @@ from app.models import (
     PAYMENT_METHODS, RES_STATUSES, ROLES, ROOM_STATUSES, STOCK_REASONS,
 )
 from app.services.common import format_money
+from app.services.i18n import LANGS, activate, direction, js_labels, t
 from app.services.security import get_csrf_token
 from app.services.settings import enabled_modules, load_hotel_settings, now_of, today_of
 
@@ -85,13 +86,34 @@ def _datetime(value) -> str:
     return value.strftime("%d/%m/%Y %H:%M") if isinstance(value, datetime) else "—"
 
 
-def _weekday(value: date) -> str:
-    return ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"][value.weekday()]
+@pass_context
+def _weekday(context, value: date) -> str:
+    label = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"][value.weekday()]
+    return t(label, context.get("lang"))
 
 
-templates.env.filters.update(money=_money, date=_date, dt=_datetime, weekday=_weekday)
+@pass_context
+def _gettext(context, text: str) -> Markup:
+    """``_("Texte source")`` : libellé statique traduit dans la langue de la page.
+
+    Le résultat n'est pas ré-échappé : textes sources et traductions proviennent du dépôt (fichiers
+    ``app/locales``), exactement comme les libellés écrits en dur dans les templates qu'ils remplacent.
+    """
+    return Markup(t(text, context.get("lang")))
+
+
+@pass_context
+def _tr(context, value):
+    """Filtre ``|tr`` : libellé dynamique (statut, dictionnaire…) traduit ; les valeurs non textuelles sont rendues telles quelles."""
+    if not isinstance(value, str):
+        return value
+    translated = t(str(value), context.get("lang"))
+    return Markup(translated) if isinstance(value, Markup) else translated
+
+
+templates.env.filters.update(money=_money, date=_date, dt=_datetime, weekday=_weekday, tr=_tr)
 templates.env.globals.update(
-    icon=icon, app_version=__version__,
+    icon=icon, app_version=__version__, _=_gettext, LANGS=LANGS, lang="fr", dir="ltr",
     ROOM_STATUSES=ROOM_STATUSES, RES_STATUSES=RES_STATUSES, PAYMENT_KINDS=PAYMENT_KINDS,
     PAYMENT_METHODS=PAYMENT_METHODS, ITEM_KINDS=ITEM_KINDS, ID_TYPES=ID_TYPES, GUEST_STATUSES=GUEST_STATUSES,
     GENDERS=GENDERS, OUTLETS=OUTLETS, ORDER_STATUSES=ORDER_STATUSES, STOCK_REASONS=STOCK_REASONS,
@@ -128,22 +150,35 @@ def flash(request: Request, message: str, kind: str = "success") -> None:
     request.session["flashes"] = [*request.session.get("flashes", []), {"kind": kind, "msg": message}]
 
 
+def _current_url(request: Request) -> str:
+    """Chemin courant avec sa chaîne de requête (cible du retour après un changement de langue)."""
+    query = request.url.query
+    return f"{request.url.path}?{query}" if query else request.url.path
+
+
 async def render(request: Request, db: AsyncSession, name: str, status_code: int = 200, **context):
+    lang = activate(request)
     hs = await load_hotel_settings(db)
     modules = await enabled_modules(db)
     user = getattr(request.state, "user", None)
+    # Les messages flash sont stockés en français et traduits uniquement à l'affichage.
+    flashes = [{**f, "msg": t(f.get("msg", ""), lang)} for f in request.session.pop("flashes", [])]
+    nav = [{**item, "label": t(item["label"], lang)} for item in navigation(user, modules)]
     context.update(
-        hs=hs, modules=modules, user=user, flashes=request.session.pop("flashes", []),
+        hs=hs, modules=modules, user=user, flashes=flashes,
         today=today_of(hs), now=now_of(hs), csrf_token=get_csrf_token(request.session),
-        nav=navigation(user, modules), current_path=request.url.path,
+        nav=nav, current_path=request.url.path, current_url=_current_url(request),
+        lang=lang, dir=direction(lang), LANGS=LANGS, i18n_js=js_labels(lang),
     )
     return templates.TemplateResponse(request, name, context, status_code=status_code)
 
 
 def render_error(request: Request, status_code: int, title: str, message: str):
+    lang = activate(request)
     return templates.TemplateResponse(
         request, "errors/error.html",
-        {"status_code": status_code, "title": title, "message": message,
+        {"status_code": status_code, "title": t(title, lang), "message": t(message, lang),
+         "lang": lang, "dir": direction(lang),
          "csrf_token": get_csrf_token(request.session) if "session" in request.scope else ""},
         status_code=status_code,
     )

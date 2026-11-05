@@ -1,53 +1,53 @@
 {% extends "layout/base.html" %}
 {% import "macros/ui.html" as ui with context %}
-{% block title %}Points de vente{% endblock %}
+{% block title %}{{ _("Points de vente") }}{% endblock %}
 {% block content %}
 <div class="flex flex-wrap items-end justify-between gap-3">
-  <div><h1 class="page-title">Points de vente</h1>
-    <p class="page-subtitle">Ventes du jour : {{ day_total|money }} · additions réglées comptant ou imputées sur la chambre</p></div>
-  <div class="flex gap-2"><a class="btn-secondary" href="/pos/catalog">{{ icon('archive', 'h-4 w-4') }} Catalogue & stock</a>
-    <a class="btn-secondary" href="/pos/stock">{{ icon('chart', 'h-4 w-4') }} Mouvements</a></div>
+  <div><h1 class="page-title">{{ _("Points de vente") }}</h1>
+    <p class="page-subtitle">{{ _("Ventes du jour :") }} {{ day_total|money }} · {{ _("additions réglées comptant ou imputées sur la chambre") }}</p></div>
+  <div class="flex gap-2"><a class="btn-secondary" href="/pos/catalog">{{ icon('archive', 'h-4 w-4') }} {{ _("Catalogue & stock") }}</a>
+    <a class="btn-secondary" href="/pos/stock">{{ icon('chart', 'h-4 w-4') }} {{ _("Mouvements") }}</a></div>
 </div>
 
 {% if not outlets %}
-  <div class="flash-info">{{ icon('alert', 'h-5 w-5') }}<span>Aucun module annexe n'est activé.{% if user.role == 'admin' %} <a href="/admin/modules" class="font-semibold underline">Activer un module</a>{% endif %}</span></div>
+  <div class="flash-info">{{ icon('alert', 'h-5 w-5') }}<span>{{ _("Aucun module annexe n'est activé.") }}{% if user.role == 'admin' %} <a href="/admin/modules" class="font-semibold underline">{{ _("Activer un module") }}</a>{% endif %}</span></div>
 {% else %}
 <section class="grid gap-4 md:grid-cols-3">
   {% for key, label in outlets.items() %}
   <form method="post" action="/pos/orders" class="card space-y-3">
     {{ ui.csrf() }}<input type="hidden" name="outlet" value="{{ key }}">
-    <div class="flex items-center gap-2 text-lg font-semibold">{{ icon('bag') }} {{ label }}</div>
-    <input class="input" name="label" placeholder="{{ 'Table, comptoir…' if key == 'restaurant' else ('Immatriculation' if key == 'parking' else 'Société, événement…') }}">
-    <button class="btn-primary w-full">{{ icon('plus', 'h-4 w-4') }} Nouvelle addition</button>
+    <div class="flex items-center gap-2 text-lg font-semibold">{{ icon('bag') }} {{ label|tr }}</div>
+    <input class="input" name="label" placeholder="{{ _('Table, comptoir…') if key == 'restaurant' else (_('Immatriculation') if key == 'parking' else _('Société, événement…')) }}">
+    <button class="btn-primary w-full">{{ icon('plus', 'h-4 w-4') }} {{ _("Nouvelle addition") }}</button>
   </form>
   {% endfor %}
 </section>
 {% endif %}
 
 {% if low_stock %}
-<div class="flash-warning">{{ icon('alert', 'h-5 w-5') }}<span>Stock bas : {% for i in low_stock %}{{ i.name }} ({{ i.stock_qty }}){{ ', ' if not loop.last }}{% endfor %}.</span></div>
+<div class="flash-warning">{{ icon('alert', 'h-5 w-5') }}<span>{{ _("Stock bas :") }} {% for i in low_stock %}{{ i.name }} ({{ i.stock_qty }}){{ ', ' if not loop.last }}{% endfor %}.</span></div>
 {% endif %}
 
 <div class="grid gap-5 lg:grid-cols-2">
   <section class="card">
-    <div class="card-title">{{ icon('clock', 'h-4 w-4') }} Additions en cours ({{ open_orders|length }})</div>
+    <div class="card-title">{{ icon('clock', 'h-4 w-4') }} {{ _("Additions en cours") }} ({{ open_orders|length }})</div>
     <ul class="divide-y divide-slate-100 dark:divide-slate-800">
       {% for o in open_orders %}
       <li class="flex items-center justify-between py-2 text-sm">
-        <div><a href="/pos/orders/{{ o.id }}" class="font-mono font-medium">{{ o.number }}</a> · {{ o.outlet_label }}
-          <div class="text-xs text-slate-500">{{ o.label or 'Sans libellé' }} · ouverte à {{ o.created_at.strftime('%H:%M') }}</div></div>
+        <div><a href="/pos/orders/{{ o.id }}" class="font-mono font-medium">{{ o.number }}</a> · {{ o.outlet_label|tr }}
+          <div class="text-xs text-slate-500">{{ o.label or _("Sans libellé") }} · {{ _("ouverte à") }} {{ o.created_at.strftime('%H:%M') }}</div></div>
         <span class="font-semibold">{{ o.total|money }}</span>
       </li>
       {% else %}<li class="py-2">{{ ui.empty("Aucune addition en cours.") }}</li>{% endfor %}
     </ul>
   </section>
   <section class="card">
-    <div class="card-title">{{ icon('check', 'h-4 w-4') }} Clôturées aujourd'hui ({{ closed_today|length }})</div>
+    <div class="card-title">{{ icon('check', 'h-4 w-4') }} {{ _("Clôturées aujourd'hui") }} ({{ closed_today|length }})</div>
     <ul class="divide-y divide-slate-100 dark:divide-slate-800">
       {% for o in closed_today %}
       <li class="flex items-center justify-between py-2 text-sm">
-        <div><a href="/pos/orders/{{ o.id }}" class="font-mono">{{ o.number }}</a> · {{ o.outlet_label }} {{ ui.order_badge(o.status) }}
-          {% if o.reservation %}<div class="text-xs text-slate-500">Chambre {{ o.reservation.room.number }} – {{ o.reservation.guest.full_name }}</div>{% endif %}</div>
+        <div><a href="/pos/orders/{{ o.id }}" class="font-mono">{{ o.number }}</a> · {{ o.outlet_label|tr }} {{ ui.order_badge(o.status) }}
+          {% if o.reservation %}<div class="text-xs text-slate-500">{{ _("Chambre") }} {{ o.reservation.room.number }} – {{ o.reservation.guest.full_name }}</div>{% endif %}</div>
         <span>{{ o.total|money }}</span>
       </li>
       {% else %}<li class="py-2">{{ ui.empty("Aucune vente aujourd'hui.") }}</li>{% endfor %}

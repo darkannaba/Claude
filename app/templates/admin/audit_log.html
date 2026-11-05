@@ -1,18 +1,18 @@
 {% extends "layout/base.html" %}
 {% import "macros/ui.html" as ui with context %}
-{% block title %}Journal d'activité{% endblock %}
+{% block title %}{{ _("Journal d'activité") }}{% endblock %}
 {% block content %}
-<div><h1 class="page-title">Journal d'activité</h1><p class="page-subtitle">Traçabilité de toutes les opérations sensibles (connexions, séjours, encaissements, corrections, paramètres).</p></div>
+<div><h1 class="page-title">{{ _("Journal d'activité") }}</h1><p class="page-subtitle">{{ _("Traçabilité de toutes les opérations sensibles (connexions, séjours, encaissements, corrections, paramètres).") }}</p></div>
 {% include "admin/_nav.html" %}
 <form method="get" class="card flex flex-wrap items-end gap-3">
-  <label><span class="label">Action</span><select class="input" name="action"><option value="">Toutes</option>
+  <label><span class="label">{{ _("Action") }}</span><select class="input" name="action"><option value="">{{ _("Toutes") }}</option>
     {% for a in actions %}<option value="{{ a }}" {{ 'selected' if a == action }}>{{ a }}</option>{% endfor %}</select></label>
-  <label><span class="label">Utilisateur</span><input class="input" name="username" value="{{ username }}"></label>
-  <button class="btn-primary">Filtrer</button>
+  <label><span class="label">{{ _("Utilisateur") }}</span><input class="input" name="username" value="{{ username }}"></label>
+  <button class="btn-primary">{{ _("Filtrer") }}</button>
 </form>
 <section class="card">
   <div class="table-wrap"><table class="table">
-    <thead><tr><th>Date</th><th>Utilisateur</th><th>Action</th><th>Objet</th><th>Détails</th></tr></thead>
+    <thead><tr><th>{{ _("Date") }}</th><th>{{ _("Utilisateur") }}</th><th>{{ _("Action") }}</th><th>{{ _("Objet") }}</th><th>{{ _("Détails") }}</th></tr></thead>
     <tbody>
     {% for e in entries %}
       <tr><td class="whitespace-nowrap text-xs">{{ e.created_at|dt }}</td><td class="font-medium">{{ e.username }}</td>
@@ -23,8 +23,8 @@
     </tbody>
   </table></div>
   <div class="mt-4 flex justify-between">
-    {% if page > 1 %}<a class="btn-secondary btn-sm" href="?page={{ page - 1 }}&action={{ action|urlencode }}&username={{ username|urlencode }}">‹ Plus récents</a>{% else %}<span></span>{% endif %}
-    {% if has_next %}<a class="btn-secondary btn-sm" href="?page={{ page + 1 }}&action={{ action|urlencode }}&username={{ username|urlencode }}">Plus anciens ›</a>{% endif %}
+    {% if page > 1 %}<a class="btn-secondary btn-sm" href="?page={{ page - 1 }}&action={{ action|urlencode }}&username={{ username|urlencode }}">‹ {{ _("Plus récents") }}</a>{% else %}<span></span>{% endif %}
+    {% if has_next %}<a class="btn-secondary btn-sm" href="?page={{ page + 1 }}&action={{ action|urlencode }}&username={{ username|urlencode }}">{{ _("Plus anciens") }} ›</a>{% endif %}
   </div>
 </section>
 {% endblock %}

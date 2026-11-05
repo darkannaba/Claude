@@ -194,7 +194,7 @@ app/
   templates/                gabarit principal, écrans par module, macros d'interface
   static/                   css/app.css (Tailwind compilé), js/, vendor/ (Alpine, Chart.js), fonts/ (DejaVu)
 scripts/                    seed_prod.py, backup.py, install.bat / run.bat, install.sh / run.sh
-tests/                      97 tests (pages, parcours complets, services) – couverture 95 %
+tests/                      196 tests – couverture 95 %
 ```
 
 ---
@@ -243,3 +243,93 @@ alembic revision --autogenerate -m "description"
   Swagger UI n'est pas servi, car il dépend d'un CDN.
 - **Version 1** : le schéma de données a changé. Une base créée avec la version 1 n'est pas migrée :
   installez la version 2 sur une base neuve.
+
+---
+
+## 8. Licence d'exploitation liée au matériel
+
+- Chaque serveur possède un **ID matériel** (`HW-XXXX-XXXX-XXXX-XXXX-XXXX`), empreinte SHA-256 de l'adresse MAC,
+  de l'UUID de la carte mère et de l'identifiant système. Il est affiché sur la page `/activate`.
+- Une **clé de licence** `HPMS1.<contenu>.<signature>` est signée **Ed25519** par l'éditeur ; elle contient le nom
+  de l'hôtel, l'ID matériel, le nombre de chambres, les modules autorisés (housekeeping, pos, ota), le type
+  (essai, abonnement, à vie) et la date d'expiration. L'application ne contient que la **clé publique**
+  (`app/license_public_key.pem`) : elle ne peut pas fabriquer de licence.
+- Le middleware `app/middlewares/license_checker.py` redirige vers `/activate` toute requête (hors connexion,
+  activation et ressources statiques) si la licence est absente, expirée, falsifiée ou émise pour une autre
+  machine ; les API répondent 403 en JSON ; un module non couvert est refusé. Un recul de l'horloge du serveur
+  est détecté. La limite de chambres est appliquée dans l'administration.
+- Désactivation du contrôle (développement) : `LICENSE_ENFORCED=false` dans `.env`.
+
+### Côté éditeur (`scripts/generate_license.py`)
+
+```bash
+python scripts/generate_license.py keygen --out publisher_keys
+```
+
+```bash
+python scripts/generate_license.py issue --private-key publisher_keys/license_private_key.pem --hotel "Hôtel El Mountazah" --hardware-id HW-XXXX-XXXX-XXXX-XXXX-XXXX --type annual --days 365 --max-rooms 30 --features housekeeping,pos,ota
+```
+
+```bash
+python scripts/generate_license.py inspect HPMS1.xxxxx.yyyyy
+```
+
+La clé privée (`publisher_keys/`) ne doit **jamais** être livrée ni versionnée (elle est ignorée par git).
+`python scripts/generate_license.py hwid` affiche l'ID matériel de la machine courante.
+
+---
+
+## 9. Channel manager / connecteurs OTA
+
+API REST sécurisée par **clé d'API** (en-tête `X-OTA-API-KEY`), administrée dans **Administration > Channel manager OTA**
+(création par canal avec permissions, suspension de la synchronisation canal par canal, révocation, journal de tous
+les échanges avec charge utile et réponse). Seule l'empreinte SHA-256 de la clé est stockée.
+
+| Méthode | Route | Permission | Rôle |
+|---|---|---|---|
+| `GET` | `/api/v1/ota/inventory?start=AAAA-MM-JJ&end=AAAA-MM-JJ` | `inventory:read` | Disponibilités et tarifs réels par type de chambre et par nuit (ARI), stop-sell automatique |
+| `POST` | `/api/v1/ota/rates` | `rates:write` | Tarifs reçus du canal : périodes « OTA <canal> » prioritaires sur les saisons |
+| `POST` | `/api/v1/ota/reservations/webhook` | `reservations:write` | Réservations entrantes : `new`, `modify`, `cancel` |
+
+Traitement d'une réservation entrante : rapprochement du client dans le CRM (pièce d'identité, email, téléphone,
+nom) ou création de la fiche ; attribution automatique d'une chambre libre du type demandé ; blocage immédiat ;
+tarif négocié du canal appliqué aux nuitées (folio et audit de nuit) ; prépaiement enregistré comme acompte ;
+mention du canal sur la réservation. **Protection contre la surréservation** : réponse `409 overbooking` si le type
+est complet ; les webhooks sont sérialisés et idempotents (une même réservation reçue deux fois n'est pas dupliquée).
+
+---
+
+## 10. Sauvegardes : disque local et Google Drive
+
+- **Archive ZIP horodatée** `hotel-backup-AAAA-MM-JJ_HHMMSS.zip` dans `backups/local/AAAA-MM-JJ/` : instantané
+  cohérent de la base (API de sauvegarde SQLite, compatible WAL), dossier `data/media/` s'il existe,
+  `manifest.json` (date, version, révision du schéma, hôtel, somme de contrôle SHA-256).
+- **Deux destinations indépendantes**, activables par commutateur dans **Administration > Sauvegardes** :
+  disque local et Google Drive. Exécution automatique quotidienne à l'heure configurée, rétention en jours
+  (suppression automatique des archives anciennes, en local et sur Drive), historique avec téléchargement,
+  **restauration en un clic** (sauvegarde de sécurité préalable, contrôle d'intégrité) et import d'une archive.
+- **Google Drive** : déposez dans la page un fichier JSON d'identification, soit un **compte de service**
+  (recommandé : partagez le dossier Drive avec l'adresse du compte de service), soit un **jeton utilisateur
+  OAuth2** produit une fois sur un poste disposant d'un navigateur :
+
+```bash
+python scripts/google_drive_auth.py --credentials credentials.json --out token.json
+```
+
+  Le jeton est rafraîchi automatiquement à l'expiration et réécrit. L'identifiant du dossier de destination est
+  la dernière partie de l'URL du dossier Drive. Le bouton « Tester la connexion » valide l'association.
+- En ligne de commande : `python scripts/backup.py` (sauvegarde locale brute, utilisable depuis le Planificateur
+  de tâches Windows).
+
+---
+
+## 11. Langues : français, arabe, anglais
+
+- Sélecteur **FR | AR | EN** dans la barre supérieure ; la langue est conservée en session et dans un cookie.
+  En arabe, l'interface passe en **droite-à-gauche**.
+- Traductions dans `app/locales/en/*.json` et `app/locales/ar/*.json` (clé = texte source français). Le français
+  est la langue source : une clé absente s'affiche en français. Le test `tests/test_locales.py` vérifie que chaque
+  libellé des templates est traduit dans les deux langues.
+- **Documents** : fiche de police, factures A4, ticket 80 mm, additions et rapport de clôture s'impriment au choix
+  en bilingue FR/AR (défaut), français, arabe ou anglais (`?lang=bi|fr|ar|en`). Les tickets envoyés directement
+  aux imprimantes thermiques existent en français et en anglais (ces imprimantes n'ont pas de police arabe).

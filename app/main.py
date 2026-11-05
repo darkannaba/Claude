@@ -21,7 +21,9 @@ from app import __version__
 from app.config import config
 from app.database import SessionLocal
 from app.deps import AccessDenied, CsrfError, LoginRequired, PasswordChangeRequired, csrf_protect
-from app.routers import admin, auth, crm, housekeeping, pms, pos, reports
+from app.middlewares.language import LanguageMiddleware
+from app.middlewares.license_checker import LicenseCheckerMiddleware
+from app.routers import admin, auth, backup, crm, housekeeping, i18n, licensing, ota_channel, pms, pos, reports
 from app.services import scheduler
 from app.services.security import SecurityHeadersMiddleware
 from app.services.seed import bootstrap, print_created_users
@@ -70,6 +72,8 @@ def create_app() -> FastAPI:
         dependencies=[Depends(csrf_protect)],
         docs_url=None, redoc_url=None, openapi_url=None,  # documentation servie localement, réservée à l'admin
     )
+    app.add_middleware(LanguageMiddleware)  # intérieur : langue courante (session, cookie, Accept-Language) via t()
+    app.add_middleware(LicenseCheckerMiddleware)  # s'exécute après la session
     app.add_middleware(
         SessionMiddleware, secret_key=config.secret_key, session_cookie="hotel_session",
         max_age=config.session_max_age, same_site="lax", https_only=config.cookie_secure,
@@ -79,6 +83,11 @@ def create_app() -> FastAPI:
 
     for module in (auth, pms, crm, housekeeping, pos, reports, admin):
         app.include_router(module.router)
+    app.include_router(licensing.router)
+    app.include_router(backup.router)
+    app.include_router(i18n.router)
+    app.include_router(ota_channel.api)
+    app.include_router(ota_channel.admin)
 
     @app.get("/health", include_in_schema=False)
     async def health():
@@ -114,7 +123,10 @@ def create_app() -> FastAPI:
     @app.exception_handler(RequestValidationError)
     async def _validation_error(request: Request, exc: RequestValidationError):
         if request.url.path.startswith("/api/"):
-            return JSONResponse({"detail": exc.errors()}, status_code=422)
+            # Seuls les champs sérialisables : le contexte pydantic peut contenir l'exception d'origine.
+            errors = [{"loc": list(err.get("loc", ())), "msg": err.get("msg", ""), "type": err.get("type", "")}
+                      for err in exc.errors()]
+            return JSONResponse({"detail": errors}, status_code=422)
         return render_error(request, 422, "Données invalides", "Un champ du formulaire est manquant ou invalide.")
 
     @app.exception_handler(Exception)
