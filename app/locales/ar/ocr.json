@@ -100,5 +100,6 @@
   "Choisissez le recto et, pour les cartes d'identité, le verso (lignes de chevrons « < ») : les deux faces sont lues ensemble et fusionnées.": "اختر الوجه، وبالنسبة لبطاقات التعريف الظهر أيضاً (أسطر الرموز « < »): تُقرأ الوجهتان معاً وتُدمجان.",
   "Retirer": "إزالة",
   "Verso (facultatif)": "الظهر (اختياري)",
-  "Les deux faces diffèrent pour « {field} » : {a} / {b}. Vérifiez sur la pièce.": "الوجهان مختلفان في « {field} »: {a} / {b}. تحقق من الوثيقة."
+  "Les deux faces diffèrent pour « {field} » : {a} / {b}. Vérifiez sur la pièce.": "الوجهان مختلفان في « {field} »: {a} / {b}. تحقق من الوثيقة.",
+  "Lecture de la MRZ corrigée grâce à l'autre face (sommes de contrôle vérifiées).": "تم تصحيح قراءة منطقة القراءة الآلية بفضل الوجه الآخر (أرقام التحقق مؤكدة)."
 }

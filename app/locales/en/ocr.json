@@ -100,5 +100,6 @@
   "Choisissez le recto et, pour les cartes d'identité, le verso (lignes de chevrons « < ») : les deux faces sont lues ensemble et fusionnées.": "Choose the front and, for identity cards, the back (lines of « < » chevrons): both sides are read together and merged.",
   "Retirer": "Remove",
   "Verso (facultatif)": "Back (optional)",
-  "Les deux faces diffèrent pour « {field} » : {a} / {b}. Vérifiez sur la pièce.": "The two sides differ for “{field}”: {a} / {b}. Check the document."
+  "Les deux faces diffèrent pour « {field} » : {a} / {b}. Vérifiez sur la pièce.": "The two sides differ for “{field}”: {a} / {b}. Check the document.",
+  "Lecture de la MRZ corrigée grâce à l'autre face (sommes de contrôle vérifiées).": "MRZ reading corrected using the other side (check digits verified)."
 }

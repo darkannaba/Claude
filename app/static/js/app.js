@@ -775,13 +775,19 @@
           // corrige donc ce que la lecture approximative du recto avait proposé ; un désaccord sur une donnée clé est
           // signalé pour vérification.
           var self = this;
-          var rank = ["td1", "td2", "td3", "aamva"].indexOf(result.format) !== -1 ? 2 : 1;
+          var mrz = ["td1", "td2", "td3", "aamva"].indexOf(result.format) !== -1;
+          var checks = result.checks || {};
+          var CHECKED = { id_number: "document_number", birth_date: "birth_date", id_expiry_date: "expiry_date" };
           Object.keys(BLANK).forEach(function (key) {
             var value = (result.fields || {})[key];
             if (!value) return;
+            // Rang : donnée MRZ validée par sa somme de contrôle (3) > autre donnée MRZ (2) > texte (1) ;
+            // une donnée MRZ dont la somme échoue ne vaut pas mieux qu'une lecture de texte.
+            var rank = !mrz ? 1 : (CHECKED[key] ? (checks[CHECKED[key]] ? 3 : 1) : 2);
             var current = self.fields[key];
             var known = self.fieldRank[key] || 0;
-            if (known && current && current !== value && CONFLICT_KEYS.indexOf(key) !== -1) {
+            var settled = rank === 3 && known < 3;  // la somme de contrôle tranche : pas d'alerte
+            if (known && current && current !== value && !settled && CONFLICT_KEYS.indexOf(key) !== -1) {
               var w = (msg.conflict || "{field} : {a} / {b}").replace("{field}", (msg.labels || {})[key] || key)
                 .replace("{a}", current).replace("{b}", value);
               if (self.warnings.indexOf(w) === -1) self.warnings.push(w);
@@ -794,7 +800,7 @@
           (result.warnings || []).forEach(function (w) { if (self.warnings.indexOf(w) === -1) self.warnings.push(w); });
           (result.notes || []).forEach(function (n) { if (self.notes.indexOf(n) === -1) self.notes.push(n); });
           // Le verso (MRZ) a fourni les noms latins : l'invitation à lire l'autre face n'a plus lieu d'être.
-          if (rank === 2 && self.fields.last_name && msg.cni_recto) {
+          if (mrz && self.fields.last_name && msg.cni_recto) {
             self.notes = self.notes.filter(function (n) { return n !== msg.cni_recto; });
           }
           if (result.raw_text) self.rawText = (self.rawText ? self.rawText + "\n――――\n" : "") + result.raw_text;
@@ -890,6 +896,8 @@
           form.append("file", slot.file, slot.name || ("piece-" + side + ".jpg"));
           form.append("source", slot.source);
           form.append("side", side);
+          // Autre face déjà lue : ses valeurs servent d'arbitre côté serveur pour une MRZ abîmée.
+          if (this.scanIds.length) form.append("other_fields", JSON.stringify(this.fields));
           form.append("csrf_token", csrf());
           if (this.cfg.reservation_id) form.append("reservation_id", this.cfg.reservation_id);
           if (this.cfg.guest_id) form.append("guest_id", this.cfg.guest_id);

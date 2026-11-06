@@ -25,6 +25,7 @@ validés. Les fichiers ne sont jamais servis par ``/static`` : voir ``app/router
 from __future__ import annotations
 
 import importlib.util
+import itertools
 import json
 import logging
 import re
@@ -73,6 +74,7 @@ MSG_ISSUE_DATE = "La date de délivrance ne figure pas dans la MRZ : saisissez-l
 MSG_EXPIRED = "Document expiré : vérifiez la validité de la pièce d'identité."
 MSG_DOC_CORRECTED = "Numéro de document corrigé automatiquement (confusion de caractères à la lecture)."
 MSG_CNI_RECTO = "Recto de CNI algérienne : les noms en caractères latins figurent au verso. Cliquez sur « Ajouter l'autre face » pour lire la MRZ, ou saisissez-les."
+MSG_FIXED_BY_OTHER_FACE = "Lecture de la MRZ corrigée grâce à l'autre face (sommes de contrôle vérifiées)."
 MSG_DOC_FROM_PAGE = "Numéro de document repris du numéro imprimé sur la pièce (MRZ partiellement illisible)."
 MSG_NAME_TRUNCATED = "Nom probablement tronqué dans la MRZ : complétez-le si nécessaire."
 MSG_BAD_BIRTH = "Date de naissance illisible dans la MRZ."
@@ -244,7 +246,7 @@ _LOOKALIKES = {
 _AZERTY_DIGITS = str.maketrans({"&": "1", "é": "2", '"': "3", "'": "4", "-": "6", "è": "7", "_": "8",
                                 "ç": "9", "à": "0"})
 TO_DIGIT = str.maketrans({"O": "0", "Q": "0", "D": "0", "U": "0", "I": "1", "L": "1", "Z": "2", "S": "5",
-                          "B": "8", "G": "6", "T": "7"})
+                          "B": "8", "G": "6", "T": "7", "A": "4"})
 TO_ALPHA = str.maketrans({"0": "O", "1": "I", "2": "Z", "5": "S", "8": "B", "6": "G", "4": "A", "7": "T"})
 # Substitutions essayées une à une sur le numéro de document quand sa somme de contrôle échoue.
 _AMBIGUOUS = {"0": "OD", "O": "0", "D": "0", "Q": "0", "1": "I", "I": "1", "L": "1", "5": "S", "S": "5",
@@ -355,6 +357,8 @@ def _shifted(fmt: str, group: list[str], source: list[str]) -> list[tuple[int, l
                 continue
             variant = list(group)
             variant[row] = _fit(moved, length)
+            if row == 0 and variant[0][2:5].translate(TO_ALPHA).replace("<", "") not in KNOWN_STATES:
+                continue  # décalage absurde : l'État émetteur ne serait plus un code pays
             variants.append((shift, variant))
         # 1er caractère perdu sur la ligne des dates / du numéro : on essaie chaque chiffre ; seule la variante qui
         # valide la somme de contrôle concernée gagne des points (le choix final reste fait sur les contrôles).
@@ -456,8 +460,10 @@ def _sex(value: str) -> str:
     return {"M": "M", "F": "F", "H": "M"}.get(value, "")
 
 
-def document_type(code: str) -> str:
-    """Code de document MRZ → type de pièce des fiches clients."""
+def document_type(code: str, fmt: str = "", state: str = "") -> str:
+    """Code de document MRZ → type de pièce des fiches clients (TD1 délivré par l'Algérie : toujours la CNI)."""
+    if fmt == "td1" and (state or "").replace("<", "") == "DZA":
+        return "cni"
     code = (code or "").replace("<", "")
     if code.startswith("P"):
         return "passport"
@@ -513,6 +519,86 @@ def _checks(lines: list[str], fmt: str) -> tuple[dict[str, bool], dict[str, str]
     return checks, raw
 
 
+NUMERIC_NUMBER_STATES = {"DZA"}
+KNOWN_STATES = set(NATIONALITIES) | {"D", "UTO", "EUE", "UNO", "XXA", "XXB", "XXC", "XOM"}
+
+
+def _field_slots(fmt: str) -> dict[str, tuple[int, int, int, int]]:
+    """Emplacements (ligne, début, fin, position du chiffre de contrôle) du numéro et des dates."""
+    if fmt == "td1":
+        return {"number": (0, 5, 14, 14), "birth": (1, 0, 6, 6), "expiry": (1, 8, 14, 14)}
+    return {"number": (1, 0, 9, 9), "birth": (1, 13, 19, 19), "expiry": (1, 21, 27, 27)}
+
+
+def _with_number(lines: list[str], fmt: str, number: str) -> list[str]:
+    return _with_slot(lines, fmt, "number", number)
+
+
+def _with_slot(lines: list[str], fmt: str, slot: str, value: str) -> list[str]:
+    row, start, end, _digit = _field_slots(fmt)[slot]
+    value = (value + "<" * (end - start))[: end - start]
+    updated = list(lines)
+    updated[row] = lines[row][:start] + value + lines[row][end:]
+    return updated
+
+
+def reconcile_with_other_face(result: "ExtractionResult", other: dict[str, Any] | None,
+                              today: date | None = None) -> "ExtractionResult":
+    """MRZ abîmée : les données lues sur l'autre face servent d'arbitre, sous le contrôle des sommes de la MRZ.
+
+    - numéro : chaque caractère est pris dans la MRZ ou sur l'autre face ; la seule combinaison qui valide le chiffre
+      de contrôle (chiffres seuls de préférence) est retenue ;
+    - dates : une date de l'autre face qui valide le chiffre de contrôle de la MRZ remplace la date mal lue.
+    Rien n'est changé si aucune combinaison ne valide les contrôles : la réception tranche alors sur la pièce.
+    """
+    if not other or result.format not in FORMATS or not result.mrz_lines:
+        return result
+    today = today or date.today()
+    fmt, lines = result.format, list(result.mrz_lines)
+    slots = _field_slots(fmt)
+    fixed = []
+    row, start, end, digit_pos = slots["number"]
+    current = lines[row][start:end].replace("<", "")
+    candidate = normalize_id_number(str(other.get("id_number") or ""))
+    check = lines[row][digit_pos]
+    if candidate and candidate != current and len(candidate) == len(current) and check.isdigit():
+        options = [{ch, ch.translate(TO_DIGIT), alt} for ch, alt in zip(current, candidate)]
+        valid = set()
+        for combo in itertools.product(*options):
+            value = "".join(combo)
+            if check_ok((value + "<" * 9)[: end - start], check):
+                valid.add(value)
+        numeric = {v for v in valid if v.isdigit()} or valid
+        if len(numeric) > 1:
+            # Plusieurs combinaisons valides : celle qui s'accorde le plus avec les deux lectures.
+            ranked = sorted(numeric, key=lambda v: -sum((a == b) + (a == c) for a, b, c in zip(v, current, candidate)))
+            best = [v for v in ranked if sum((a == b) + (a == c) for a, b, c in zip(v, current, candidate))
+                    == sum((a == b) + (a == c) for a, b, c in zip(ranked[0], current, candidate))]
+            numeric = set(best) if len(best) == 1 else set()
+        if len(numeric) == 1:
+            value = numeric.pop()
+            if value != current or not result.checks.get("document_number"):
+                lines = _with_slot(lines, fmt, "number", value)
+                fixed.append("number")
+    for slot, key in (("birth", "birth_date"), ("expiry", "id_expiry_date")):
+        row, start, end, digit_pos = slots[slot]
+        if check_ok(lines[row][start:end], lines[row][digit_pos]):
+            continue
+        other_date = parse_any_date(str(other.get(key) or ""))
+        if other_date and check_ok(other_date.strftime("%y%m%d"), lines[row][digit_pos]):
+            lines = _with_slot(lines, fmt, slot, other_date.strftime("%y%m%d"))
+            fixed.append(slot)
+    if not fixed:
+        return result
+    rebuilt = parse_mrz_lines(fmt, lines, today)
+    rebuilt.engine, rebuilt.raw_text = result.engine, result.raw_text
+    for key in ("id_issue_date", "id_issue_place", "last_name_ar", "first_name_ar", "birth_place"):
+        if result.fields.get(key) and not rebuilt.fields.get(key):
+            rebuilt.fields[key] = result.fields[key]
+    rebuilt.notes.append(MSG_FIXED_BY_OTHER_FACE)
+    return rebuilt
+
+
 def _repair_number(lines: list[str], fmt: str) -> list[str] | None:
     """Essaie les confusions courantes (O/0, I/1, S/5…) sur le numéro de document pour valider sa somme.
 
@@ -546,6 +632,12 @@ def parse_mrz_lines(fmt: str, lines: list[str], today: date | None = None) -> Ex
     today = today or date.today()
     result = ExtractionResult(format=fmt, engine="mrz")
     checks, raw = _checks(lines, fmt)
+    digits = raw["number"].replace("<", "").translate(TO_DIGIT)
+    if raw["state"].replace("<", "") in NUMERIC_NUMBER_STATES and re.search(r"[A-Z]", raw["number"]) \
+            and digits.isdigit():
+        # Pièces algériennes : le numéro n'a que des chiffres ; une lettre est une erreur de lecture (L03B… → 103 8…).
+        lines = _with_number(lines, fmt, digits)
+        checks, raw = _checks(lines, fmt)
     if not checks["document_number"]:
         repaired = _repair_number(lines, fmt)
         if repaired is not None:
@@ -564,7 +656,7 @@ def parse_mrz_lines(fmt: str, lines: list[str], today: date | None = None) -> Ex
         "birth_date": birth.isoformat() if birth else "",
         "gender": _sex(raw["sex"]),
         "nationality": nationality_label(nationality_code),
-        "id_type": document_type(raw["code"]),
+        "id_type": document_type(raw["code"], fmt, raw["state"]),
         "id_number": raw["number"].replace("<", ""),
         "id_expiry_date": expiry.isoformat() if expiry else "",
         "id_issue_date": "", "id_issue_place": "",

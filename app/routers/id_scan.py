@@ -8,6 +8,7 @@ multipart) et chaque action est inscrite au journal d'activité. Les scans ne so
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -133,6 +134,20 @@ def _read_document(prepared: ocr_service.PreparedFile, today) -> ocr_service.Ext
     return ocr_service.ocr_image(prepared.image, today)
 
 
+def _other_face_fields(raw) -> dict:
+    """Champs déjà lus sur l'autre face (JSON envoyé par la fenêtre de scan) : seules des chaînes courtes."""
+    if not isinstance(raw, str) or not raw or len(raw) > 4000:
+        return {}
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    keys = ("id_number", "birth_date", "id_expiry_date")
+    return {k: str(data[k])[:40] for k in keys if isinstance(data.get(k), str) and data.get(k)}
+
+
 @router.post("/api/id-scan/upload")
 async def id_scan_upload(request: Request, db: DbSession, user: StaffUser):
     """Image (PNG / JPEG), photo webcam ou PDF → fichier conservé + champs proposés si l'OCR est disponible."""
@@ -162,6 +177,9 @@ async def id_scan_upload(request: Request, db: DbSession, user: StaffUser):
     await asyncio.to_thread(ocr_service.purge_pending)
     relative = await asyncio.to_thread(ocr_service.write_scan, prepared, owner_id)
     result = await asyncio.to_thread(_read_document, prepared, today_of(hs))
+    other = _other_face_fields(form.get("other_fields"))
+    if other:
+        result = ocr_service.reconcile_with_other_face(result, other, today_of(hs))
     scan = await ocr_service.record_scan(
         db, result, source=source, user=user, hs=hs, side=side, guest=guest, reservation=reservation,
         file_path=relative, mime_type=prepared.mime_type, file_size=len(prepared.content))

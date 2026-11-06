@@ -831,3 +831,53 @@ def test_scan_dialog_offers_both_sides_in_one_read(admin):
     page = admin.get("/reservations/new").text
     assert "data-id-scan-file" in page
     assert "Verso (facultatif)" in page
+
+
+def test_back_mrz_reconciled_with_front_reading():
+    """Verso mal lu (L03B…, 1970) + recto mal lu (…26922) : la combinaison validée par les sommes l'emporte."""
+    from app.services.ocr_service import MSG_FIXED_BY_OTHER_FACE, parse_mrz, reconcile_with_other_face
+
+    l1, l2, l3 = _td1()                       # n° 512345678, né le 21/06/1988
+    damaged_l1 = l1[:5] + "S1Z345678" + l1[14:]  # 5→S, 2→Z : lettres dans un numéro algérien
+    damaged_l2 = "78" + l2[2:]                # 1988 lu 1978 : somme de contrôle invalide
+    result = parse_mrz("\n".join((damaged_l1, damaged_l2, l3)), date(2026, 11, 6))
+    assert result.fields["id_number"] == "512345678"  # chiffres seuls pour l'Algérie (S→5, Z→2)
+    assert not result.checks["birth_date"]
+    fixed = reconcile_with_other_face(result, {"id_number": "512345678", "birth_date": "1988-06-21"},
+                                      date(2026, 11, 6))
+    assert fixed.fields["birth_date"] == "1988-06-21" and fixed.checks["birth_date"]
+    assert MSG_FIXED_BY_OTHER_FACE in fixed.notes
+
+
+def test_number_rebuilt_from_both_faces():
+    from app.services.ocr_service import parse_mrz, reconcile_with_other_face
+
+    l1, l2, l3 = _td1(number="403828922")
+    mrz = parse_mrz("\n".join((l1[:5] + "103828922" + l1[14:], l2, l3)), date(2026, 11, 6))
+    assert not mrz.checks["document_number"]
+    fixed = reconcile_with_other_face(mrz, {"id_number": "403826922"}, date(2026, 11, 6))
+    assert fixed.fields["id_number"] == "403828922" and fixed.checks["document_number"]
+    # Aucune combinaison valide : rien n'est inventé.
+    untouched = reconcile_with_other_face(mrz, {"id_number": "999999999"}, date(2026, 11, 6))
+    assert untouched.fields["id_number"] == "103828922"
+
+
+def test_algerian_td1_is_always_an_id_card():
+    from app.services.ocr_service import document_type
+
+    assert document_type("D<", "td1", "DZA") == "cni"
+    assert document_type("D<", "td1", "FRA") == "permis"
+
+
+def test_upload_uses_other_face_fields(admin, monkeypatch):
+    from app.routers import id_scan
+    from app.services import ocr_service
+
+    l1, l2, l3 = _td1(number="403828922")
+    text = "\n".join((l1[:5] + "103828922" + l1[14:], l2, l3))
+    monkeypatch.setattr(id_scan, "_read_document",
+                        lambda prepared, today: ocr_service.parse_mrz(text, today))
+    image = io.BytesIO()
+    Image.new("RGB", (300, 200), "white").save(image, "PNG")
+    response = upload(admin, image.getvalue(), side="verso", other_fields='{"id_number": "403826922"}')
+    assert response.json()["result"]["fields"]["id_number"] == "403828922"
