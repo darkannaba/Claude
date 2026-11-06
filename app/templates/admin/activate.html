@@ -10,7 +10,7 @@
   <section class="card">
     <div class="card-title">{{ icon('id', 'h-4 w-4') }} {{ _("ID matériel de ce serveur") }}</div>
     <div class="rounded-lg bg-slate-100 px-4 py-3 font-mono text-lg font-semibold tracking-wider dark:bg-slate-800 select-all">{{ status.hardware_id }}</div>
-    <p class="help mt-2">{{ _("Empreinte calculée à partir de l'adresse MAC, de l'UUID de la carte mère et de l'identifiant système.") }}</p>
+    <p class="help mt-2">{{ _("Empreinte stable calculée à partir de l'identifiant d'installation du système et du modèle de la machine (indépendante du réseau et du VPN).") }}</p>
     {% if not public_key_present %}
       <div class="flash-error mt-4">{{ icon('alert', 'h-5 w-5 shrink-0') }}<span>{{ _("Clé publique de l'éditeur absente") }} (<code>app/license_public_key.pem</code>) : {{ _("aucune licence ne peut être vérifiée.") }}</span></div>
     {% endif %}

@@ -65,7 +65,7 @@
   "Licence d'exploitation": "ترخيص الاستغلال",
   "La licence est liée à ce serveur : communiquez son ID matériel à l'éditeur pour obtenir une clé d'activation.": "الترخيص مرتبط بهذا الخادم: أرسل معرّف العتاد إلى الناشر للحصول على مفتاح التفعيل.",
   "ID matériel de ce serveur": "معرّف عتاد هذا الخادم",
-  "Empreinte calculée à partir de l'adresse MAC, de l'UUID de la carte mère et de l'identifiant système.": "بصمة محسوبة من عنوان MAC ومعرّف اللوحة الأم (UUID) ومعرّف النظام.",
+  "Empreinte stable calculée à partir de l'identifiant d'installation du système et du modèle de la machine (indépendante du réseau et du VPN).": "بصمة ثابتة محسوبة من معرّف تثبيت النظام وطراز الجهاز (مستقلة عن الشبكة والـ VPN).",
   "Clé publique de l'éditeur absente": "المفتاح العام للناشر غير موجود",
   "aucune licence ne peut être vérifiée.": "لا يمكن التحقق من أي ترخيص.",
   "État": "الحالة",

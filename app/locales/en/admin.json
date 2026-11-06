@@ -65,7 +65,7 @@
   "Licence d'exploitation": "Operating license",
   "La licence est liée à ce serveur : communiquez son ID matériel à l'éditeur pour obtenir une clé d'activation.": "The license is tied to this server: send its hardware ID to the vendor to obtain an activation key.",
   "ID matériel de ce serveur": "Hardware ID of this server",
-  "Empreinte calculée à partir de l'adresse MAC, de l'UUID de la carte mère et de l'identifiant système.": "Fingerprint computed from the MAC address, the motherboard UUID and the system identifier.",
+  "Empreinte stable calculée à partir de l'identifiant d'installation du système et du modèle de la machine (indépendante du réseau et du VPN).": "Stable fingerprint computed from the system installation identifier and the machine model (independent of the network and VPN).",
   "Clé publique de l'éditeur absente": "Vendor public key missing",
   "aucune licence ne peut être vérifiée.": "no license can be verified.",
   "État": "Status",
