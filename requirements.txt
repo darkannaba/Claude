@@ -17,6 +17,11 @@ openpyxl>=3.1
 cryptography>=42
 # Base des fuseaux horaires (Africa/Algiers) : absente de Windows, indispensable à zoneinfo
 tzdata>=2024.1
+# Sauvegarde Google Drive (app/services/backup_manager.py, scripts/google_drive_auth.py)
+google-api-python-client>=2.100
+google-auth>=2.20
+google-auth-oauthlib>=1.0
+requests>=2.31
 # Images (charte graphique, pièces d'identité numérisées) : validation et réencodage
 pillow>=10.0
 # Lecture des pièces d'identité : OCR facultatif. pytesseract ne fait qu'appeler le binaire Tesseract,
