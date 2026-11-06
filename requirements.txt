@@ -15,6 +15,8 @@ arabic-reshaper>=3.0
 python-bidi>=0.5
 openpyxl>=3.1
 cryptography>=42
+# Base des fuseaux horaires (Africa/Algiers) : absente de Windows, indispensable à zoneinfo
+tzdata>=2024.1
 # Images (charte graphique, pièces d'identité numérisées) : validation et réencodage
 pillow>=10.0
 # Lecture des pièces d'identité : OCR facultatif. pytesseract ne fait qu'appeler le binaire Tesseract,
