@@ -200,3 +200,33 @@ def test_publisher_cli(tmp_path):
     assert run("inspect", "invalide").returncode == 1
     assert run("issue", "--private-key", str(private), "--hotel", "X", "--hardware-id", hwid,
                "--features", "spa").returncode == 1
+
+
+def test_fingerprint_ignores_network_cards_and_external_commands(monkeypatch):
+    """La MAC (VPN, Wi-Fi…) et les commandes externes ne doivent jamais faire varier l'ID d'une même machine."""
+    def _forbidden(*_args, **_kwargs):
+        raise AssertionError("source instable utilisée")
+
+    monkeypatch.setattr(licensing.uuid, "getnode", _forbidden)
+    monkeypatch.setattr(licensing, "_run", _forbidden)
+    monkeypatch.setattr(licensing.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(licensing, "_read_text",
+                        lambda path: "abc123" if path == "/etc/machine-id" else ("Dell Inc." if path.endswith("sys_vendor") else ""))
+    assert licensing.hardware_components() == {"machine_id": "abc123", "sys_vendor": "dell inc."}
+
+
+def test_windows_fingerprint_reads_registry_only(monkeypatch):
+    def _forbidden(*_args, **_kwargs):
+        raise AssertionError("source instable utilisée")
+
+    monkeypatch.setattr(licensing.uuid, "getnode", _forbidden)
+    monkeypatch.setattr(licensing, "_run", _forbidden)
+    monkeypatch.setattr(licensing.platform, "system", lambda: "Windows")
+    registry = {
+        r"SOFTWARE\Microsoft\Cryptography": {"MachineGuid": "1234-abcd"},
+        r"HARDWARE\DESCRIPTION\System\BIOS": {"SystemManufacturer": "hp", "BaseBoardProduct": "8a4f"},
+    }
+    monkeypatch.setattr(licensing, "_windows_registry",
+                        lambda path, names: {k: v for k, v in registry[path].items() if k in names})
+    assert licensing.hardware_components() == {"machine_guid": "1234-abcd", "SystemManufacturer": "hp",
+                                               "BaseBoardProduct": "8a4f"}

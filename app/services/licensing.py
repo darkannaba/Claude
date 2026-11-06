@@ -64,38 +64,65 @@ def _run(command: list[str]) -> str:
         return ""
 
 
+# Valeurs du BIOS lues dans le registre Windows (lisibles sans droits administrateur, sans sous-processus)
+_WINDOWS_BIOS_VALUES = ("SystemManufacturer", "SystemProductName", "BaseBoardManufacturer", "BaseBoardProduct")
+# Fichiers DMI lisibles par tout utilisateur sous Linux (product_uuid et board_serial exigent root : exclus)
+_LINUX_DMI_FILES = ("sys_vendor", "product_name", "board_vendor", "board_name")
+
+
+def _windows_registry(path: str, names: tuple[str, ...]) -> dict[str, str]:
+    try:
+        import winreg  # noqa: PLC0415 – disponible uniquement sous Windows
+
+        values = {}
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path, 0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as key:
+            for name in names:
+                try:
+                    values[name] = str(winreg.QueryValueEx(key, name)[0]).strip().lower()
+                except OSError:
+                    continue
+        return {k: v for k, v in values.items() if v}
+    except (ImportError, OSError):
+        return {}
+
+
 def hardware_components() -> dict[str, str]:
-    """Identifiants stables de la machine : adresse MAC, UUID carte mère / système, identifiant d'OS."""
+    """Identifiants STABLES de la machine.
+
+    Seules des sources déterministes sont retenues : le même PC donne toujours le même ID, que l'application soit
+    lancée par ``run.bat``, en service, en ligne de commande, avec ou sans droits administrateur.
+
+    - Windows : MachineGuid (registre, fixé à l'installation de Windows) + modèle de carte mère et de PC (registre).
+    - Linux : /etc/machine-id + modèle DMI lisible sans droits root.
+    - macOS : IOPlatformUUID.
+
+    L'adresse MAC est exclue : la carte réseau « principale » change avec un VPN, le Wi-Fi, un câble ou une station
+    d'accueil. Les commandes externes (PowerShell…) aussi : leur échec ou leur lenteur changerait l'ID d'un lancement à
+    l'autre. La MAC et le nom d'hôte ne servent qu'en tout dernier recours, si aucune source stable n'existe.
+    """
     components: dict[str, str] = {}
-    node = uuid.getnode()
-    if not (node >> 40) & 1:  # bit « multicast » : MAC générée aléatoirement par Python, non fiable
-        components["mac"] = f"{node:012x}"
     system = platform.system()
-    if system == "Linux":
-        for path in ("/sys/class/dmi/id/product_uuid", "/sys/class/dmi/id/board_serial"):
-            value = _read_text(path)
-            if value:
-                components[Path(path).name] = value.lower()
+    if system == "Windows":
+        guid = _windows_registry(r"SOFTWARE\Microsoft\Cryptography", ("MachineGuid",))
+        if guid:
+            components["machine_guid"] = guid["MachineGuid"]
+        components.update(_windows_registry(r"HARDWARE\DESCRIPTION\System\BIOS", _WINDOWS_BIOS_VALUES))
+    elif system == "Linux":
         machine_id = _read_text("/etc/machine-id") or _read_text("/var/lib/dbus/machine-id")
         if machine_id:
             components["machine_id"] = machine_id
-    elif system == "Windows":
-        try:
-            import winreg  # noqa: PLC0415 – disponible uniquement sous Windows
-
-            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography") as key:
-                components["machine_guid"] = str(winreg.QueryValueEx(key, "MachineGuid")[0]).lower()
-        except OSError:
-            pass
-        output = _run(["powershell", "-NoProfile", "-Command",
-                       "(Get-CimInstance -ClassName Win32_ComputerSystemProduct).UUID"])
-        if output.strip():
-            components["board_uuid"] = output.strip().lower()
+        for name in _LINUX_DMI_FILES:
+            value = _read_text(f"/sys/class/dmi/id/{name}")
+            if value:
+                components[name] = value.lower()
     elif system == "Darwin":
         for line in _run(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"]).splitlines():
             if "IOPlatformUUID" in line:
                 components["platform_uuid"] = line.split("=")[-1].strip().strip('"').lower()
     if not components:
+        node = uuid.getnode()
+        if not (node >> 40) & 1:  # bit « multicast » : MAC générée aléatoirement par Python, non fiable
+            components["mac"] = f"{node:012x}"
         components["hostname"] = platform.node().lower()
     return components
 
