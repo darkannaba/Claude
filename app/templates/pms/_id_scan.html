@@ -149,6 +149,10 @@
               <label class="block sm:col-span-2 lg:col-span-1"><span class="label">{{ _("Délivrée à") }}</span><input class="input" x-model="fields.id_issue_place" dir="auto" autocomplete="off"></label>
             </div>
             <ul class="help space-y-0.5" x-show="notes.length" x-cloak><template x-for="n in notes" :key="n"><li x-text="'ℹ ' + n"></li></template></ul>
+            <details x-show="rawText" x-cloak class="text-xs text-slate-500">
+              <summary class="cursor-pointer select-none">{{ _("Texte lu par l'OCR (pour vérification)") }}</summary>
+              <pre class="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-100 p-2 font-mono dark:bg-slate-800" dir="auto" x-text="rawText"></pre>
+            </details>
 
             <div x-show="files.length" x-cloak class="flex flex-wrap gap-3">
               <template x-for="f in files" :key="f.url">

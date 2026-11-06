@@ -622,7 +622,7 @@
         mrzText: "", side: "recto", file: null, fileSource: "image_upload", fileName: "", previewUrl: "",
         previewIsPdf: false, camera: { active: false, stream: null },
         status: { loaded: false, tesseract: true, pdf: true },
-        result: null, fields: Object.assign({}, BLANK, cfg.guest_fields || {}), warnings: [], notes: [], scanIds: [], files: [],
+        result: null, fields: Object.assign({}, BLANK, cfg.guest_fields || {}), warnings: [], notes: [], scanIds: [], files: [], rawText: "",
         applied: null, burst: null,
 
         init: function () {
@@ -700,7 +700,7 @@
           this.tab = "mrz"; this.step = "capture"; this.busy = false; this.error = ""; this.info = "";
           this.mrzText = ""; this.side = "recto"; this.result = null;
           this.fields = Object.assign({}, BLANK, this.cfg.guest_fields || {});
-          this.warnings = []; this.notes = []; this.scanIds = []; this.files = []; this.applied = null;
+          this.warnings = []; this.notes = []; this.scanIds = []; this.files = []; this.applied = null; this.rawText = "";
         },
         restart: function () { this.reset(); this.focusCapture(); },
         switchTab: function (tab) {
@@ -775,6 +775,7 @@
           });
           (result.warnings || []).forEach(function (w) { if (self.warnings.indexOf(w) === -1) self.warnings.push(w); });
           (result.notes || []).forEach(function (n) { if (self.notes.indexOf(n) === -1) self.notes.push(n); });
+          if (result.raw_text) self.rawText = (self.rawText ? self.rawText + "\n――――\n" : "") + result.raw_text;
           this.step = "verify";
         },
         analyseMrz: async function (text) {

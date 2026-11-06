@@ -95,5 +95,6 @@
   "Fiche client mise à jour à partir de la pièce d'identité.": "تم تحديث بطاقة الزبون من وثيقة الهوية.",
   "Scan de la pièce d'identité supprimé.": "تم حذف مسح وثيقة الهوية.",
   "Numéro de document repris du numéro imprimé sur la pièce (MRZ partiellement illisible).": "تم أخذ رقم الوثيقة من الرقم المطبوع عليها (منطقة القراءة الآلية غير مقروءة جزئياً).",
-  "Recto de CNI algérienne : les noms en caractères latins figurent au verso. Cliquez sur « Ajouter l'autre face » pour lire la MRZ, ou saisissez-les.": "وجه بطاقة التعريف الجزائرية: الأسماء بالحروف اللاتينية موجودة في الظهر. انقر على « إضافة الوجه الآخر » لقراءة منطقة القراءة الآلية، أو أدخلها يدوياً."
+  "Recto de CNI algérienne : les noms en caractères latins figurent au verso. Cliquez sur « Ajouter l'autre face » pour lire la MRZ, ou saisissez-les.": "وجه بطاقة التعريف الجزائرية: الأسماء بالحروف اللاتينية موجودة في الظهر. انقر على « إضافة الوجه الآخر » لقراءة منطقة القراءة الآلية، أو أدخلها يدوياً.",
+  "Texte lu par l'OCR (pour vérification)": "النص المقروء آلياً (للتحقق)"
 }

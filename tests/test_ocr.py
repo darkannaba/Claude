@@ -788,3 +788,12 @@ def test_algerian_id_card_dates_without_readable_labels():
     assert (fields["id_issue_date"], fields["id_expiry_date"], fields["birth_date"]) == \
         ("2021-03-15", "2031-03-14", "1988-06-21")
     assert fields["gender"] == "M"
+
+
+def test_algerian_card_number_split_by_spaces_and_raw_text_exposed():
+    from app.services.ocr_service import extract_from_text
+
+    result = extract_from_text("بطاقة التعريف الوطنية\n403 828 922\n119900841080890003\n2022.12.02\n2032.12.01",
+                               date(2026, 11, 6))
+    assert result.fields["id_number"] == "403828922"
+    assert "403 828 922" in result.to_dict()["raw_text"]

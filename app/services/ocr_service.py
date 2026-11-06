@@ -206,7 +206,7 @@ class ExtractionResult:
             "extra": dict(self.extra), "format": self.format, "engine": self.engine, "mrz": self.mrz,
             "checks": dict(self.checks), "checksums_valid": self.checksums_valid, "warnings": list(self.warnings),
             "notes": list(self.notes), "confidence": round(self.confidence, 2), "status": self.status,
-            "message": self.message,
+            "message": self.message, "raw_text": (self.raw_text or "")[:4000],
         }
 
 
@@ -868,7 +868,9 @@ def _read_algerian_id_card(content: str, result: ExtractionResult, today: date) 
     nin = re.search(r"(?<!\d)(\d{18})(?!\d)", text)
     if nin:
         result.extra["nin"] = nin.group(1)
-    numbers = [n for n in re.findall(r"(?<!\d)(\d{9})(?!\d)", text) if not (nin and n in nin.group(1))]
+    # 9 chiffres, éventuellement séparés par des espaces par l'OCR (« 403 828 922 »), hors NIN et hors dates.
+    numbers = [n.replace(" ", "") for n in re.findall(r"(?<![\d.])(\d(?: ?\d){8})(?![\d.])", text)]
+    numbers = [n for n in numbers if not (nin and n in nin.group(1))]
     if numbers:
         fields["id_number"] = numbers[0]
     elif nin and fields.get("id_number") == nin.group(1):
@@ -1133,6 +1135,15 @@ def ocr_image(image: Image.Image, today: date | None = None) -> ExtractionResult
             page_text = module.image_to_string(prepared, lang=_languages(module), config="--psm 3") or ""
         except Exception:  # langue manquante : nouvel essai en anglais seul
             page_text = module.image_to_string(prepared, lang="eng", config="--psm 3") or ""
+        if found is None:
+            # Pièces sans MRZ (recto de CNI) : passe « chiffres seuls » en texte épars, bien plus fiable pour le
+            # numéro de carte et les dates AAAA.MM.JJ que la lecture arabe de la page entière.
+            try:
+                digits = module.image_to_string(prepared, lang="eng",
+                                                config="--psm 11 -c tessedit_char_whitelist=0123456789.") or ""
+                page_text = f"{page_text}\n{digits}"
+            except Exception as exc:
+                logger.info("Passe chiffres seuls impossible : %s", exc)
     except Exception as exc:
         logger.warning("OCR Tesseract en échec : %s", exc)
         return ExtractionResult(engine="tesseract", message=MSG_OCR_ERROR, raw_text="\n".join(texts))
