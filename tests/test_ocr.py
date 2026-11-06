@@ -747,3 +747,44 @@ def test_guessed_number_replaced_by_printed_number():
     _recover_number_from_page(result, "N° 123456789")
     assert result.fields["id_number"] == "123456789"
     assert not result.extra["number_repaired"]
+
+
+# ---------------------------------------------------------------- CNI biométrique algérienne : recto en arabe
+_CNI_RECTO = """الجمهورية الجزائرية الديمقراطية الشعبية
+بطاقة التعريف الوطنية
+512345678
+سلطة الإصدار: بلدية عنابة-عنابة
+2021.03.15 تاريخ الإصدار
+2031.03.14 تاريخ الإنتهاء
+رقم التعريف الوطني: 109876543210987654
+اللقب: بن علي
+الإسم: ليلى
+Rh: A+  الجنس: أنثى   تاريخ الميلاد: 1988.06.21
+مكان الميلاد: قسنطينة"""
+
+
+def test_algerian_id_card_front_in_arabic():
+    from app.services.ocr_service import MSG_CNI_RECTO, extract_from_text
+
+    result = extract_from_text(_CNI_RECTO, date(2026, 11, 6))
+    fields = result.fields
+    assert fields["id_number"] == "512345678"          # pas le NIN à 18 chiffres
+    assert result.extra["nin"] == "109876543210987654"
+    assert (fields["id_issue_date"], fields["id_expiry_date"]) == ("2021-03-15", "2031-03-14")
+    assert fields["birth_date"] == "1988-06-21"
+    assert (fields["last_name_ar"], fields["first_name_ar"]) == ("بن علي", "ليلى")
+    assert fields["gender"] == "F" and fields["id_type"] == "cni" and fields["nationality"] == "Algérienne"
+    assert fields["birth_place"] == "Constantine" and fields["id_issue_place"] == "Annaba"
+    assert MSG_CNI_RECTO in result.notes
+
+
+def test_algerian_id_card_dates_without_readable_labels():
+    """Libellés arabes illisibles : délivrance / expiration reconnues à leur écart de 10 ans moins un jour."""
+    from app.services.ocr_service import extract_from_text
+
+    text = "بطاقة التعريف\n٥١٢٣٤٥٦٧٨\n٢٠٢١.٠٣.١٥\n2031.03.14\n109876543210987654\n1988.06.21\nذكر"
+    fields = extract_from_text(text, date(2026, 11, 6)).fields
+    assert fields["id_number"] == "512345678"           # chiffres arabes-indiens convertis
+    assert (fields["id_issue_date"], fields["id_expiry_date"], fields["birth_date"]) == \
+        ("2021-03-15", "2031-03-14", "1988-06-21")
+    assert fields["gender"] == "M"

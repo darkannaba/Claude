@@ -34,7 +34,7 @@ import time
 import unicodedata
 import warnings
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -72,6 +72,7 @@ MSG_OCR_ERROR = "Erreur du moteur OCR : le fichier est conservé, saisissez les 
 MSG_ISSUE_DATE = "La date de délivrance ne figure pas dans la MRZ : saisissez-la à partir de la pièce."
 MSG_EXPIRED = "Document expiré : vérifiez la validité de la pièce d'identité."
 MSG_DOC_CORRECTED = "Numéro de document corrigé automatiquement (confusion de caractères à la lecture)."
+MSG_CNI_RECTO = "Recto de CNI algérienne : les noms en caractères latins figurent au verso. Cliquez sur « Ajouter l'autre face » pour lire la MRZ, ou saisissez-les."
 MSG_DOC_FROM_PAGE = "Numéro de document repris du numéro imprimé sur la pièce (MRZ partiellement illisible)."
 MSG_NAME_TRUNCATED = "Nom probablement tronqué dans la MRZ : complétez-le si nécessaire."
 MSG_BAD_BIRTH = "Date de naissance illisible dans la MRZ."
@@ -797,13 +798,121 @@ _KEYWORDS = {
 }
 
 
+# ------------------------------------------------------------------ CNI biométrique algérienne (recto, en arabe)
+_AR_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+_AR_LETTERS = str.maketrans({"أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا", "ـ": None})
+
+# Wilayas (et grandes communes) : nom arabe → nom français, pour le lieu de naissance et l'autorité de délivrance.
+WILAYAS_AR = {
+    "ادرار": "Adrar", "الشلف": "Chlef", "الاغواط": "Laghouat", "ام البواقي": "Oum El Bouaghi", "باتنة": "Batna",
+    "بجاية": "Béjaïa", "بسكرة": "Biskra", "بشار": "Béchar", "البليدة": "Blida", "البويرة": "Bouira",
+    "تمنراست": "Tamanrasset", "تبسة": "Tébessa", "تلمسان": "Tlemcen", "تيارت": "Tiaret", "تيزي وزو": "Tizi Ouzou",
+    "الجزائر": "Alger", "الجلفة": "Djelfa", "جيجل": "Jijel", "سطيف": "Sétif", "سعيدة": "Saïda",
+    "سكيكدة": "Skikda", "سيدي بلعباس": "Sidi Bel Abbès", "عنابة": "Annaba", "قالمة": "Guelma",
+    "قسنطينة": "Constantine", "المدية": "Médéa", "مستغانم": "Mostaganem", "المسيلة": "M'Sila",
+    "معسكر": "Mascara", "ورقلة": "Ouargla", "وهران": "Oran", "البيض": "El Bayadh", "اليزي": "Illizi",
+    "برج بوعريريج": "Bordj Bou Arréridj", "بومرداس": "Boumerdès", "الطارف": "El Tarf", "تندوف": "Tindouf",
+    "تيسمسيلت": "Tissemsilt", "الوادي": "El Oued", "خنشلة": "Khenchela", "سوق اهراس": "Souk Ahras",
+    "تيبازة": "Tipaza", "ميلة": "Mila", "عين الدفلي": "Aïn Defla", "النعامة": "Naâma",
+    "عين تموشنت": "Aïn Témouchent", "غرداية": "Ghardaïa", "غليزان": "Relizane", "تيميمون": "Timimoun",
+    "برج باجي مختار": "Bordj Badji Mokhtar", "اولاد جلال": "Ouled Djellal", "بني عباس": "Béni Abbès",
+    "عين صالح": "In Salah", "عين قزام": "In Guezzam", "تقرت": "Touggourt", "جانت": "Djanet",
+    "المغير": "El M'Ghair", "المنيعة": "El Meniaa", "البوني": "El Bouni", "الحجار": "El Hadjar",
+    "برحال": "Berrahal", "سرايدي": "Seraïdi", "عين الباردة": "Aïn Berda", "الذرعان": "Dréan",
+}
+_WILAYAS_NORM = {name.translate(_AR_LETTERS): label for name, label in WILAYAS_AR.items()}
+
+
+def _ar_norm(text: str) -> str:
+    """Chiffres arabes-indiens → chiffres latins ; formes de l'alif et du ya unifiées ; tatwil retiré."""
+    return (text or "").translate(_AR_DIGITS).translate(_AR_LETTERS)
+
+
+def _is_algerian_id_card(content: str) -> bool:
+    text = _ar_norm(content)
+    return ("بطاقة التعريف" in text or "التعريف الوطني" in text or "الجمهورية الجزائرية" in text
+            or bool(re.search(r"(?<!\d)\d{18}(?!\d)", text)))
+
+
+def _place_from_arabic(value: str) -> str:
+    """« بلدية عنابة » → « Annaba » ; sinon le texte arabe tel quel."""
+    value = " ".join(value.translate(_AR_LETTERS).replace("بلدية", " ").replace("ولاية", " ").replace("دائرة", " ").split())
+    for name, label in sorted(_WILAYAS_NORM.items(), key=lambda item: -len(item[0])):
+        if name in value:
+            return label
+    return value
+
+
+def _arabic_after(label_re: str, text: str) -> str:
+    """Valeur arabe qui suit un libellé (« اللقب: السعد »), sur la même ligne."""
+    match = re.search(label_re + r"\s*[:：.]?\s*([\u0621-\u064A ]{2,40})", text)
+    if not match:
+        return ""
+    value = re.split(r"\s{2,}|تاريخ|مكان|الجنس|رقم|سلطة", match.group(1))[0]
+    return " ".join(value.split())
+
+
+def _read_algerian_id_card(content: str, result: ExtractionResult, today: date) -> None:
+    """Recto de la CNI biométrique algérienne : entièrement en arabe, sans MRZ (la MRZ est au verso).
+
+    - n° de la carte : 9 chiffres en haut ; le NIN (18 chiffres, « رقم التعريف الوطني ») n'est PAS le n° de pièce ;
+    - dates AAAA.MM.JJ : délivrance, expiration (= délivrance + 10 ans − 1 jour), naissance ;
+    - اللقب / الاسم : nom et prénom en arabe ; الجنس : ذكر / أنثى ; مكان الميلاد ; سلطة الإصدار (commune).
+    """
+    text = content.translate(_AR_DIGITS).replace("ـ", "")  # valeurs gardées telles quelles (hamza, alif maqsura)
+    fields = result.fields
+    fields["id_type"] = "cni"
+    fields.setdefault("nationality", "Algérienne")
+    if not fields.get("nationality"):
+        fields["nationality"] = "Algérienne"
+    nin = re.search(r"(?<!\d)(\d{18})(?!\d)", text)
+    if nin:
+        result.extra["nin"] = nin.group(1)
+    numbers = [n for n in re.findall(r"(?<!\d)(\d{9})(?!\d)", text) if not (nin and n in nin.group(1))]
+    if numbers:
+        fields["id_number"] = numbers[0]
+    elif nin and fields.get("id_number") == nin.group(1):
+        fields["id_number"] = ""
+    # Dates : délivrance et expiration se reconnaissent à leur écart de 10 ans (ou 5 ans) moins un jour.
+    found = sorted({d for d in (parse_any_date(m.group(1)) for m in _DATE_RE.finditer(text)) if d})
+    for issue in found:
+        for years in (10, 5):
+            try:
+                end = issue.replace(year=issue.year + years) - timedelta(days=1)
+            except ValueError:
+                continue
+            if end in found:
+                fields["id_issue_date"], fields["id_expiry_date"] = issue.isoformat(), end.isoformat()
+    others = [d for d in found if d.isoformat() not in (fields.get("id_issue_date"), fields.get("id_expiry_date"))]
+    births = [d for d in others if d < today and (today - d).days > 365 * 10]
+    if births and not fields.get("birth_date"):
+        fields["birth_date"] = births[0].isoformat()
+    last_ar = _arabic_after(r"اللقب", text)
+    first_ar = _arabic_after(r"ال[اأإآ]سم", text)
+    if last_ar:
+        fields["last_name_ar"] = last_ar
+    if first_ar:
+        fields["first_name_ar"] = first_ar
+    if re.search(r"[اأ]نث[ىي]", text):
+        fields["gender"] = "F"
+    elif "ذكر" in text:
+        fields["gender"] = "M"
+    birth_place = _arabic_after(r"مكان (?:الميلاد|ال[اإ]زدياد)", text)
+    if birth_place:
+        fields["birth_place"] = _place_from_arabic(birth_place)
+    authority = _arabic_after(r"سلطة ال[اأإ]صدار", text)
+    if authority:
+        fields["id_issue_place"] = _place_from_arabic(authority)
+    if not fields.get("last_name") or not fields.get("first_name"):
+        result.notes.append(MSG_CNI_RECTO)
+
+
 def extract_from_text(text: str, today: date | None = None) -> ExtractionResult:
     """Lecture approximative d'un texte OCR sans MRZ : numéro, dates, noms, sexe, nationalité, type de pièce."""
     today = today or date.today()
     result = ExtractionResult(format="texte", engine="tesseract", raw_text=text or "")
-    content = text or ""
+    content = (text or "").translate(_AR_DIGITS)
     lines = [line.strip() for line in content.splitlines() if line.strip()]
-    folded_lines = [_fold(line) for line in lines]
     dated: list[tuple[date, str | None]] = []
     for index, line in enumerate(lines):
         for match in _DATE_RE.finditer(line):
@@ -812,7 +921,10 @@ def extract_from_text(text: str, today: date | None = None) -> ExtractionResult:
                 continue
             # Mot-clé sur la même ligne, avant la date ; à défaut, sur la ligne précédente (libellé au-dessus).
             kind = None
-            for context in (_fold(line[: match.start()]), folded_lines[index - 1] if index else ""):
+            # Avant la date, puis après (lignes arabes : « 2022.12.02 تاريخ الإصدار »), puis ligne précédente.
+            contexts = (_fold(_ar_norm(line[: match.start()])), _fold(_ar_norm(line[match.end():])),
+                        _fold(_ar_norm(lines[index - 1])) if index else "")
+            for context in contexts:
                 kind = next((key for key, words in _KEYWORDS.items() if any(w in context for w in words)), None)
                 if kind:
                     break
@@ -844,7 +956,7 @@ def extract_from_text(text: str, today: date | None = None) -> ExtractionResult:
         if match:
             result.fields[key] = " ".join(match.group(1).split()).title()
     for key, pattern in (("last_name_ar", r"اللقب\s*[:：]?\s*([؀-ۿ ]{2,40})"),
-                         ("first_name_ar", r"الاسم\s*[:：]?\s*([؀-ۿ ]{2,40})")):
+                         ("first_name_ar", r"ال[اأإآ]سم\s*[:：]?\s*([؀-ۿ ]{2,40})")):
         match = re.search(pattern, content)
         if match:
             result.fields[key] = " ".join(match.group(1).split())
@@ -863,6 +975,8 @@ def extract_from_text(text: str, today: date | None = None) -> ExtractionResult:
         result.fields["id_type"] = "permis"
     elif any(word in upper for word in ("CARTE NATIONALE", "IDENTITY CARD", "IDENTITE", "بطاقة التعريف")):
         result.fields["id_type"] = "cni"
+    if _is_algerian_id_card(content):
+        _read_algerian_id_card(content, result, today)
     expiry = parse_any_date(result.fields.get("id_expiry_date", ""))
     if expiry and expiry < today:
         result.warn(MSG_EXPIRED)

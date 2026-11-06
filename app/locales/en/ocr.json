@@ -94,5 +94,6 @@
   "Fiche client créée à partir de la pièce d'identité.": "Guest record created from the ID document.",
   "Fiche client mise à jour à partir de la pièce d'identité.": "Guest record updated from the ID document.",
   "Scan de la pièce d'identité supprimé.": "ID document scan deleted.",
-  "Numéro de document repris du numéro imprimé sur la pièce (MRZ partiellement illisible).": "Document number taken from the number printed on the document (MRZ partly unreadable)."
+  "Numéro de document repris du numéro imprimé sur la pièce (MRZ partiellement illisible).": "Document number taken from the number printed on the document (MRZ partly unreadable).",
+  "Recto de CNI algérienne : les noms en caractères latins figurent au verso. Cliquez sur « Ajouter l'autre face » pour lire la MRZ, ou saisissez-les.": "Algerian ID card front: names in Latin characters are on the back. Click “Add the other side” to read the MRZ, or type them in."
 }
