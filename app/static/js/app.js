@@ -613,14 +613,17 @@
   var FORMAT_LABELS = { td1: "MRZ TD1 (3 × 30)", td2: "MRZ TD2 (2 × 36)", td3: "MRZ TD3 (2 × 44)",
                         aamva: "PDF417 AAMVA", json: "QR / JSON", cles: "QR / PDF417", texte: "OCR" };
 
+  function emptySlot() { return { file: null, source: "image_upload", name: "", pdf: false, url: "" }; }
+  var CONFLICT_KEYS = ["id_number", "birth_date", "id_expiry_date", "gender", "last_name", "first_name"];
+
   document.addEventListener("alpine:init", function () {
     window.Alpine.data("idScanner", function () {
       var cfg = readConfig();
       var msg = cfg.messages || {};
       return {
         cfg: cfg, isOpen: false, tab: "mrz", step: "capture", busy: false, error: "", info: "",
-        mrzText: "", side: "recto", file: null, fileSource: "image_upload", fileName: "", previewUrl: "",
-        previewIsPdf: false, camera: { active: false, stream: null },
+        mrzText: "", side: "recto", slots: { recto: emptySlot(), verso: emptySlot() },
+        camera: { active: false, stream: null }, fieldRank: {},
         status: { loaded: false, tesseract: true, pdf: true },
         result: null, fields: Object.assign({}, BLANK, cfg.guest_fields || {}), warnings: [], notes: [], scanIds: [], files: [], rawText: "",
         applied: null, burst: null,
@@ -701,6 +704,7 @@
           this.mrzText = ""; this.side = "recto"; this.result = null;
           this.fields = Object.assign({}, BLANK, this.cfg.guest_fields || {});
           this.warnings = []; this.notes = []; this.scanIds = []; this.files = []; this.applied = null; this.rawText = "";
+          this.fieldRank = {};
         },
         restart: function () { this.reset(); this.focusCapture(); },
         switchTab: function (tab) {
@@ -725,7 +729,7 @@
           this.info = "";
           this.error = "";
           this.clearPreview();
-          this.switchTab(this.tab);
+          this.switchTab(this.tab === "mrz" ? "mrz" : "photo");
         },
         loadStatus: async function () {
           if (this.status.loaded) return;
@@ -767,14 +771,32 @@
           this.result = result;
           // La première lecture remplace les valeurs de la fiche existante ; une lecture suivante (autre face) ne
           // complète que les champs encore vides, sans écraser ce que la réception a déjà vérifié ou corrigé.
+          // Priorité des sources : MRZ (sommes de contrôle) > texte lu sur la face sans MRZ. Une MRZ lue sur le verso
+          // corrige donc ce que la lecture approximative du recto avait proposé ; un désaccord sur une donnée clé est
+          // signalé pour vérification.
           var self = this;
-          var first = this.scanIds.length <= 1;
+          var rank = ["td1", "td2", "td3", "aamva"].indexOf(result.format) !== -1 ? 2 : 1;
           Object.keys(BLANK).forEach(function (key) {
             var value = (result.fields || {})[key];
-            if (value && (first || !self.fields[key] || self.fields[key] === BLANK[key])) self.fields[key] = value;
+            if (!value) return;
+            var current = self.fields[key];
+            var known = self.fieldRank[key] || 0;
+            if (known && current && current !== value && CONFLICT_KEYS.indexOf(key) !== -1) {
+              var w = (msg.conflict || "{field} : {a} / {b}").replace("{field}", (msg.labels || {})[key] || key)
+                .replace("{a}", current).replace("{b}", value);
+              if (self.warnings.indexOf(w) === -1) self.warnings.push(w);
+            }
+            if (!known || !current || current === BLANK[key] || rank > known) {
+              self.fields[key] = value;
+              self.fieldRank[key] = Math.max(rank, known);
+            }
           });
           (result.warnings || []).forEach(function (w) { if (self.warnings.indexOf(w) === -1) self.warnings.push(w); });
           (result.notes || []).forEach(function (n) { if (self.notes.indexOf(n) === -1) self.notes.push(n); });
+          // Le verso (MRZ) a fourni les noms latins : l'invitation à lire l'autre face n'a plus lieu d'être.
+          if (rank === 2 && self.fields.last_name && msg.cni_recto) {
+            self.notes = self.notes.filter(function (n) { return n !== msg.cni_recto; });
+          }
           if (result.raw_text) self.rawText = (self.rawText ? self.rawText + "\n――――\n" : "") + result.raw_text;
           this.step = "verify";
         },
@@ -793,29 +815,36 @@
         },
 
         // ---------------------------------------------------------------- fichier et caméra
-        clearPreview: function () {
-          if (this.previewUrl) URL.revokeObjectURL(this.previewUrl);
-          this.previewUrl = ""; this.previewIsPdf = false; this.fileName = ""; this.file = null;
-          if (this.$refs && this.$refs.file) this.$refs.file.value = "";
+        clearPreview: function (side) {
+          var self = this;
+          (side ? [side] : ["recto", "verso"]).forEach(function (name) {
+            var slot = self.slots[name];
+            if (slot.url) URL.revokeObjectURL(slot.url);
+            self.slots[name] = emptySlot();
+            document.querySelectorAll('input[data-id-scan-file][data-side="' + name + '"]').forEach(function (input) {
+              input.value = "";
+            });
+          });
         },
-        setFile: function (file, source) {
-          this.clearPreview();
+        get hasFiles() { return !!(this.slots.recto.file || this.slots.verso.file); },
+        setFile: function (file, source, side) {
+          side = side || this.side;
+          this.clearPreview(side);
           this.error = "";
           if (!file) return;
           if (["image/png", "image/jpeg", "application/pdf"].indexOf(file.type) === -1) { this.error = msg.bad_type; return; }
           if (file.size > (this.cfg.max_bytes || 8388608)) { this.error = msg.too_big; return; }
-          this.file = file;
-          this.fileSource = source;
-          this.fileName = file.name || "";
-          this.previewIsPdf = file.type === "application/pdf";
-          if (!this.previewIsPdf) this.previewUrl = URL.createObjectURL(file);
+          var pdf = file.type === "application/pdf";
+          this.slots[side] = { file: file, source: source, name: file.name || "", pdf: pdf,
+                               url: pdf ? "" : URL.createObjectURL(file) };
         },
-        pickFile: function (event) {
+        pickFile: function (event, side) {
           var input = event.target;
-          this.setFile(input.files && input.files[0], "image_upload");
-          if (!this.file) input.value = "";
+          this.setFile(input.files && input.files[0], "image_upload", side);
+          if (!this.slots[side].file) input.value = "";
         },
-        startCamera: async function () {
+        startCamera: async function (side) {
+          if (side) this.side = side;
           this.error = "";
           if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
             this.error = msg.camera_insecure;
@@ -851,27 +880,37 @@
           var self = this;
           canvas.toBlob(function (blob) {
             if (!blob) { self.error = msg.camera_error; return; }
-            self.setFile(new File([blob], "webcam-" + self.side + ".jpg", { type: "image/jpeg" }), "webcam");
+            self.setFile(new File([blob], "webcam-" + self.side + ".jpg", { type: "image/jpeg" }), "webcam", self.side);
             self.stopCamera();
           }, "image/jpeg", 0.92);
         },
-        upload: async function () {
-          if (!this.file) { this.error = msg.no_file; return; }
+        uploadSide: async function (side) {
+          var slot = this.slots[side];
           var form = new FormData();
-          form.append("file", this.file, this.fileName || "piece.jpg");
-          form.append("source", this.fileSource);
-          form.append("side", this.side);
+          form.append("file", slot.file, slot.name || ("piece-" + side + ".jpg"));
+          form.append("source", slot.source);
+          form.append("side", side);
           form.append("csrf_token", csrf());
           if (this.cfg.reservation_id) form.append("reservation_id", this.cfg.reservation_id);
           if (this.cfg.guest_id) form.append("guest_id", this.cfg.guest_id);
-          this.busy = true;
-          this.error = "";
           var data = await this.request("/api/id-scan/upload", { method: "POST", body: form });
-          this.busy = false;
-          if (!data.ok) { this.error = data.message; return; }
-          this.clearPreview();
+          if (!data.ok) { this.error = data.message; return false; }
+          this.side = side;
           this.receive(data);
           if (data.result && data.result.status === "failed" && data.result.message) this.info = data.result.message;
+          return true;
+        },
+        // Recto et verso choisis ensemble : une seule lecture, les deux faces fusionnées (la MRZ l'emporte).
+        upload: async function () {
+          if (!this.hasFiles) { this.error = msg.no_file; return; }
+          this.busy = true;
+          this.error = "";
+          var sides = ["recto", "verso"].filter(function (name) { return this.slots[name].file; }, this);
+          for (var i = 0; i < sides.length; i++) {
+            if (!(await this.uploadSide(sides[i]))) break;
+          }
+          this.busy = false;
+          if (!this.error) this.clearPreview();
         },
 
         // ---------------------------------------------------------------- vérification et validation

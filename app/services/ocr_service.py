@@ -338,23 +338,31 @@ def _shifted(fmt: str, group: list[str], source: list[str]) -> list[tuple[int, l
     """
     variants: list[tuple[int, list[str]]] = [(0, group)]
     count, length = FORMATS[fmt]
-    row = 1  # ligne des dates (TD1 : 2e ligne ; TD2/TD3 : 2e ligne)
-    raw = None
-    for line in source:
-        if _fit(line, length) == group[row]:
-            raw = line
-            break
-    if raw is None:
-        raw = group[row].rstrip("<")
-    for shift in range(-MAX_SHIFT, MAX_SHIFT + 1):
-        if shift == 0:
-            continue
-        moved = raw[shift:] if shift > 0 else "<" * (-shift) + raw
-        if not moved:
-            continue
-        variant = list(group)
-        variant[row] = _fit(moved, length)
-        variants.append((shift, variant))
+    rows = (0, 1) if fmt == "td1" else (1,)  # TD1 : le numéro (ligne 1) et les dates (ligne 2) ont leurs contrôles
+    for row in rows:
+        raw = next((line for line in source if _fit(line, length) == group[row]), group[row].rstrip("<"))
+        for shift in range(-MAX_SHIFT, MAX_SHIFT + 1):
+            if shift == 0:
+                continue
+            if shift > 0:
+                moved = raw[shift:]
+            elif row == 0:
+                # 1re ligne : c'est le code du document qui a disparu (« IDDZA… » lu « DDZA… »).
+                moved = ("I" + "<" * MAX_SHIFT)[: -shift] + raw
+            else:
+                moved = "<" * (-shift) + raw
+            if not moved:
+                continue
+            variant = list(group)
+            variant[row] = _fit(moved, length)
+            variants.append((shift, variant))
+        # 1er caractère perdu sur la ligne des dates / du numéro : on essaie chaque chiffre ; seule la variante qui
+        # valide la somme de contrôle concernée gagne des points (le choix final reste fait sur les contrôles).
+        if row == 1:
+            for digit in "0123456789":
+                variant = list(group)
+                variant[row] = _fit(digit + raw, length)
+                variants.append((-1, variant))
     return variants
 
 
@@ -428,6 +436,9 @@ def _names(field_value: str) -> tuple[str, str, bool]:
         if run.count("K") >= 4 or (run.count("K") >= 3 and "<" in run):
             value = value[:tail.start()].rstrip("<")
             truncated = False
+    if "<<" not in value:
+        # Séparateur « << » mal lu (« ALSAAD<K<MANAR ») : une lettre isolée de remplissage entre deux mots en tient lieu.
+        value = re.sub(r"<[KXLSCE]<", "<<", value, count=1)
     surname, _, given = value.partition("<<")
     # Après les prénoms, tout n'est que remplissage : un nouveau « << » marque la fin des prénoms.
     given = given.split("<<")[0]

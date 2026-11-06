@@ -797,3 +797,37 @@ def test_algerian_card_number_split_by_spaces_and_raw_text_exposed():
                                date(2026, 11, 6))
     assert result.fields["id_number"] == "403828922"
     assert "403 828 922" in result.to_dict()["raw_text"]
+
+
+# ---------------------------------------------------------------- CNI biométrique algérienne : verso (MRZ TD1)
+def _td1(number="512345678", birth="880621", sex="F", expiry="310314", surname="BENALI", given="LEILA"):
+    from app.services.ocr_service import check_digit
+
+    l1 = (f"IDDZA{number}{check_digit(number)}" + "<" * 30)[:30]
+    l2 = f"{birth}{check_digit(birth)}{sex}{expiry}{check_digit(expiry)}DZA" + "<" * 11
+    l2 += check_digit(l1[5:30] + l2[0:7] + l2[8:15] + l2[18:29])
+    l3 = (f"{surname}<<{given}" + "<" * 30)[:30]
+    return l1, l2, l3
+
+
+@pytest.mark.parametrize("damage", ["none", "lost_I", "lost_digit", "separator_K"])
+def test_algerian_card_back_mrz_survives_ocr_damage(damage):
+    from app.services.ocr_service import parse_mrz
+
+    l1, l2, l3 = _td1()
+    if damage == "lost_I":
+        l1 = l1[1:]
+    elif damage == "lost_digit":
+        l2 = l2[1:]
+    elif damage == "separator_K":
+        l3 = ("BENALI<K<LEILA" + "<" * 30)[:30]
+    fields = parse_mrz("\n".join((l1, l2, l3)), date(2026, 11, 6)).fields
+    assert (fields["last_name"], fields["first_name"]) == ("Benali", "Leila")
+    assert fields["id_type"] == "cni" and fields["id_number"] == "512345678"
+    assert (fields["birth_date"], fields["id_expiry_date"], fields["gender"]) == ("1988-06-21", "2031-03-14", "F")
+
+
+def test_scan_dialog_offers_both_sides_in_one_read(admin):
+    page = admin.get("/reservations/new").text
+    assert "data-id-scan-file" in page
+    assert "Verso (facultatif)" in page

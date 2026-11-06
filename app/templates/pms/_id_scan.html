@@ -40,6 +40,11 @@
     "applied_new": _("Client sélectionné pour la réservation."),
     "recto": _("Recto"),
     "verso": _("Verso"),
+    "verso_optional": _("Verso (facultatif)"),
+    "cni_recto": _("Recto de CNI algérienne : les noms en caractères latins figurent au verso. Cliquez sur « Ajouter l'autre face » pour lire la MRZ, ou saisissez-les."),
+    "conflict": _("Les deux faces diffèrent pour « {field} » : {a} / {b}. Vérifiez sur la pièce."),
+    "labels": {"id_number": _("N° de pièce"), "birth_date": _("Date de naissance"), "id_expiry_date": _("Date d'expiration"),
+               "gender": _("Sexe"), "last_name": _("Nom"), "first_name": _("Prénom")},
   },
 } %}
 <script type="application/json" id="id-scan-config">{{ scan_cfg|tojson }}</script>
@@ -83,25 +88,34 @@
             <div x-show="tab === 'photo'" x-cloak class="space-y-3">
               <div x-show="status.loaded && !status.tesseract" class="flash-warning">{{ icon('alert', 'h-5 w-5 shrink-0') }}
                 <span>{{ _("Moteur OCR Tesseract non installé : le fichier est conservé, mais la lecture automatique de l'image est impossible. Utilisez la douchette MRZ ou saisissez les champs.") }}</span></div>
+              <p class="help">{{ _("Choisissez le recto et, pour les cartes d'identité, le verso (lignes de chevrons « < ») : les deux faces sont lues ensemble et fusionnées.") }}</p>
               <div class="grid gap-3 sm:grid-cols-2">
-                <label class="block"><span class="label">{{ _("Face de la pièce") }}</span>
-                  <select class="input" x-model="side"><option value="recto">{{ _("Recto") }}</option><option value="verso">{{ _("Verso") }}</option></select></label>
-                <label class="block"><span class="label">{{ _("Fichier (PNG, JPG ou PDF – 8 Mo max.)") }}</span>
-                  <input class="input" type="file" accept="image/png,image/jpeg,application/pdf" x-ref="file" @change="pickFile($event)"></label>
+                <template x-for="name in ['recto', 'verso']" :key="name">
+                  <div class="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="label mb-0" x-text="name === 'recto' ? cfg.messages.recto : cfg.messages.verso_optional"></span>
+                      <button type="button" class="btn-ghost btn-sm" x-show="slots[name].file" x-cloak @click="clearPreview(name)" aria-label="{{ _('Retirer') }}">{{ icon('x', 'h-4 w-4') }}</button>
+                    </div>
+                    <input class="input" type="file" accept="image/png,image/jpeg,application/pdf" data-id-scan-file :data-side="name" @change="pickFile($event, name)" :aria-label="name === 'recto' ? cfg.messages.recto : cfg.messages.verso_optional">
+                    <button type="button" class="btn-secondary btn-sm w-full" x-show="!camera.active" @click="startCamera(name)">{{ icon('id', 'h-4 w-4') }} {{ _("Utiliser la caméra") }}</button>
+                    <template x-if="slots[name].url"><img :src="slots[name].url" alt="{{ _('Aperçu de la pièce') }}" class="mx-auto h-28 w-auto rounded object-contain"></template>
+                    <template x-if="slots[name].pdf"><span class="badge-slate">{{ icon('document', 'h-3 w-3') }} PDF</span></template>
+                    <span class="block truncate text-xs text-slate-500" dir="auto" x-text="slots[name].name"></span>
+                  </div>
+                </template>
               </div>
-              <div class="flex flex-wrap gap-2">
-                <button type="button" class="btn-secondary btn-sm" x-show="!camera.active" @click="startCamera()">{{ icon('id', 'h-4 w-4') }} {{ _("Utiliser la caméra") }}</button>
-                <button type="button" class="btn-primary btn-sm" x-show="camera.active" x-cloak @click="capturePhoto()">{{ icon('check', 'h-4 w-4') }} {{ _("Prendre la photo") }}</button>
-                <button type="button" class="btn-secondary btn-sm" x-show="camera.active" x-cloak @click="stopCamera()">{{ _("Arrêter la caméra") }}</button>
+              <div x-show="camera.active" x-cloak class="space-y-2">
+                <div class="overflow-hidden rounded-lg border border-slate-200 bg-black dark:border-slate-700">
+                  <video x-ref="video" class="mx-auto max-h-72 w-full object-contain" autoplay playsinline muted></video>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="badge-slate" x-text="side === 'recto' ? cfg.messages.recto : cfg.messages.verso"></span>
+                  <button type="button" class="btn-primary btn-sm" @click="capturePhoto()">{{ icon('check', 'h-4 w-4') }} {{ _("Prendre la photo") }}</button>
+                  <button type="button" class="btn-secondary btn-sm" @click="stopCamera()">{{ _("Arrêter la caméra") }}</button>
+                </div>
               </div>
               <p class="help">{{ _("Cadrez toute la pièce, à plat, sans reflet ; la bande MRZ (lignes de chevrons « < ») doit être nette.") }}</p>
-              <div x-show="camera.active" x-cloak class="overflow-hidden rounded-lg border border-slate-200 bg-black dark:border-slate-700">
-                <video x-ref="video" class="mx-auto max-h-72 w-full object-contain" autoplay playsinline muted></video>
-              </div>
-              <div x-show="previewUrl || fileName" x-cloak class="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-                <template x-if="previewUrl && !previewIsPdf"><img :src="previewUrl" alt="{{ _('Aperçu de la pièce') }}" class="h-32 w-auto rounded object-contain"></template>
-                <template x-if="previewIsPdf"><span class="badge-slate">{{ icon('document', 'h-3 w-3') }} PDF</span></template>
-                <span class="min-w-0 flex-1 truncate text-sm" dir="auto" x-text="fileName"></span>
+              <div class="flex justify-end" x-show="hasFiles" x-cloak>
                 <button type="button" class="btn-primary btn-sm" :disabled="busy" @click="upload()">{{ icon('upload', 'h-4 w-4') }}
                   <span x-show="!busy">{{ _("Envoyer et lire") }}</span><span x-show="busy" x-cloak>{{ _("Lecture en cours…") }}</span></button>
               </div>
