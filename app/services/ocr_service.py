@@ -502,19 +502,31 @@ def _checks(lines: list[str], fmt: str) -> tuple[dict[str, bool], dict[str, str]
 
 
 def _repair_number(lines: list[str], fmt: str) -> list[str] | None:
-    """Essaie les confusions courantes (O/0, I/1, S/5…) sur le numéro de document pour valider sa somme."""
+    """Essaie les confusions courantes (O/0, I/1, S/5…) sur le numéro de document pour valider sa somme.
+
+    Une somme de contrôle n'a que 10 valeurs : en essayant beaucoup de remplacements, l'un d'eux finit par « passer »
+    par hasard. La réparation n'est donc retenue que si elle est UNIQUE, et jamais si elle glisse une lettre dans
+    un numéro fait de chiffres (cas des passeports et CNI algériens).
+    """
     row, start, end, digit_pos = (0, 5, 14, 14) if fmt == "td1" else (1, 0, 9, 9)
     line = lines[row]
     if line[digit_pos] == "<":
         return None
+    number = line[start:end]
+    numeric = sum(ch.isdigit() for ch in number) >= len(number.rstrip("<")) - 1
+    found: list[str] = []
     for index in range(start, end):
         for replacement in _AMBIGUOUS.get(line[index], ""):
+            if numeric and replacement.isalpha():
+                continue
             candidate = line[:index] + replacement + line[index + 1:]
-            if check_ok(candidate[start:end], candidate[digit_pos]):
-                repaired = list(lines)
-                repaired[row] = candidate
-                return repaired
-    return None
+            if check_ok(candidate[start:end], candidate[digit_pos]) and candidate not in found:
+                found.append(candidate)
+    if len(found) != 1:
+        return None
+    repaired = list(lines)
+    repaired[row] = found[0]
+    return repaired
 
 
 def parse_mrz_lines(fmt: str, lines: list[str], today: date | None = None) -> ExtractionResult:
@@ -528,6 +540,7 @@ def parse_mrz_lines(fmt: str, lines: list[str], today: date | None = None) -> Ex
             lines = repaired
             checks, raw = _checks(lines, fmt)
             result.warn(MSG_DOC_CORRECTED)
+            result.extra["number_repaired"] = True
     result.mrz_lines = list(lines)
     result.checks = checks
     surname, given, truncated = _names(raw["names"])
@@ -545,6 +558,7 @@ def parse_mrz_lines(fmt: str, lines: list[str], today: date | None = None) -> Ex
         "id_issue_date": "", "id_issue_place": "",
     }
     result.extra = {
+        **result.extra,
         "document_code": raw["code"].replace("<", ""), "issuing_state": raw["state"].replace("<", ""),
         "issuing_state_label": nationality_label(raw["state"]), "nationality_code": nationality_code,
         "optional_data": " ".join(part for part in raw["optional"].split("<") if part),
@@ -1036,25 +1050,39 @@ def _edit_distance(a: str, b: str) -> int:
     return previous[-1]
 
 
-def _recover_number_from_page(result: ExtractionResult, page_text: str) -> None:
-    """Numéro de MRZ abîmé : on cherche sur la page le numéro imprimé en clair qui valide la somme de contrôle.
+def _common_affix(a: str, b: str) -> int:
+    prefix = next((i for i, (x, y) in enumerate(zip(a, b)) if x != y), min(len(a), len(b)))
+    suffix = next((i for i, (x, y) in enumerate(zip(reversed(a), reversed(b))) if x != y), min(len(a), len(b)))
+    return max(prefix, suffix)
 
-    Le candidat doit à la fois valider le chiffre de contrôle de la MRZ ET ressembler au numéro lu (au plus trois
-    caractères d'écart), pour ne jamais remplacer le numéro par un autre nombre de la page.
+
+def _recover_number_from_page(result: ExtractionResult, page_text: str) -> None:
+    """Numéro de MRZ abîmé ou réparé par devinette : on préfère le numéro imprimé en clair sur la page.
+
+    Le candidat doit valider le chiffre de contrôle de la MRZ, ressembler au numéro lu (au plus quatre caractères
+    d'écart) et partager avec lui au moins quatre caractères en début ou en fin : un autre nombre de la page (numéro
+    personnel, date…) ne peut pas le remplacer.
     """
-    if result.checks.get("document_number", True) or result.format not in ("td3", "td2") or not result.mrz_lines:
+    repaired = bool(result.extra.get("number_repaired"))
+    if result.format not in ("td3", "td2") or not result.mrz_lines:
+        return
+    if result.checks.get("document_number", True) and not repaired:
         return
     line = result.mrz_lines[1]
     digit, current = line[9], line[0:9].replace("<", "")
     if not digit.isdigit():
         return
-    for token in re.findall(r"[A-Z0-9]{6,9}", (page_text or "").upper()):
-        if check_ok(_fit(token, 9), digit) and _edit_distance(token, current) <= 3:
+    for token in dict.fromkeys(re.findall(r"[A-Z0-9]{6,9}", (page_text or "").upper())):
+        if token == current or not check_ok(_fit(token, 9), digit):
+            continue
+        if _edit_distance(token, current) <= 4 and _common_affix(token, current) >= 4:
             result.fields["id_number"] = token
             result.checks["document_number"] = True
             result.mrz_lines[1] = _fit(token, 9) + line[9:]
-            result.warnings = [w for w in result.warnings if w != CHECK_WARNINGS["document_number"]]
+            result.warnings = [w for w in result.warnings
+                               if w not in (CHECK_WARNINGS["document_number"], MSG_DOC_CORRECTED)]
             result.warn(MSG_DOC_FROM_PAGE)
+            result.extra["number_repaired"] = False
             return
 
 

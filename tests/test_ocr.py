@@ -716,3 +716,34 @@ def test_number_recovered_from_printed_number_on_page():
     other = parse_mrz(f"{_L1}\n{_L2[2:]}", date(2026, 11, 6))
     _recover_number_from_page(other, "N° personnel 109890841056800005")
     assert not other.checks["document_number"]
+
+
+def test_number_repair_never_slips_a_letter_into_a_numeric_number():
+    """« 187128777 » ne doit pas devenir « 9I28777 » parce qu'un remplacement chiffre → lettre valide par hasard."""
+    import itertools
+
+    from app.services.ocr_service import _AMBIGUOUS, _repair_number, check_digit, check_ok
+
+    tested = 0
+    for digits in itertools.islice(("".join(p) for p in itertools.product("1258", repeat=9)), 4000):
+        wrong = str((int(check_digit(digits)) + 3) % 10)
+        letter_fix = any(check_ok(digits[:i] + r + digits[i + 1:], wrong)
+                         for i, ch in enumerate(digits) for r in _AMBIGUOUS.get(ch, "") if r.isalpha())
+        if not letter_fix:
+            continue
+        line2 = (digits + wrong + "DZA9001011M3005051" + "<" * 44)[:44]
+        repaired = _repair_number([_L1, line2], "td3")
+        assert repaired is None or repaired[1][:9].isdigit()
+        tested += 1
+    assert tested > 10
+
+
+def test_guessed_number_replaced_by_printed_number():
+    from app.services.ocr_service import _recover_number_from_page, parse_mrz
+
+    result = parse_mrz(f"{_L1}\n{_L2[2:]}", date(2026, 11, 6))
+    result.extra["number_repaired"] = True
+    result.checks["document_number"] = True
+    _recover_number_from_page(result, "N° 123456789")
+    assert result.fields["id_number"] == "123456789"
+    assert not result.extra["number_repaired"]
