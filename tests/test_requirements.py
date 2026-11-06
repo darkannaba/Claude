@@ -22,6 +22,7 @@ def test_tzdata_required_for_windows_timezones():
 def test_timezone_loads_from_tzdata_package():
     from zoneinfo import ZoneInfo
 
-    import tzdata  # noqa: F401 – le paquet doit être installé
+    import tzdata
 
+    assert tzdata.IANA_VERSION
     assert ZoneInfo("Africa/Algiers").key == "Africa/Algiers"
