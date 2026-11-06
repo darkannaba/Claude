@@ -72,6 +72,7 @@ MSG_OCR_ERROR = "Erreur du moteur OCR : le fichier est conservé, saisissez les 
 MSG_ISSUE_DATE = "La date de délivrance ne figure pas dans la MRZ : saisissez-la à partir de la pièce."
 MSG_EXPIRED = "Document expiré : vérifiez la validité de la pièce d'identité."
 MSG_DOC_CORRECTED = "Numéro de document corrigé automatiquement (confusion de caractères à la lecture)."
+MSG_DOC_FROM_PAGE = "Numéro de document repris du numéro imprimé sur la pièce (MRZ partiellement illisible)."
 MSG_NAME_TRUNCATED = "Nom probablement tronqué dans la MRZ : complétez-le si nécessaire."
 MSG_BAD_BIRTH = "Date de naissance illisible dans la MRZ."
 MSG_BAD_EXPIRY = "Date d'expiration illisible dans la MRZ."
@@ -323,6 +324,39 @@ def _candidates(lines: list[str]) -> list[tuple[str, list[str], int]]:
     return found
 
 
+MAX_SHIFT = 4
+
+
+def _shifted(fmt: str, group: list[str], source: list[str]) -> list[tuple[int, list[str]]]:
+    """Variantes où la ligne de données est décalée de quelques caractères.
+
+    Un hologramme, un reflet ou le bord de la photo font souvent perdre (ou ajouter) un ou deux caractères en début
+    de ligne : tout le reste glisse et les dates deviennent illisibles. On essaie les décalages de -4 à +4 sur la
+    ligne brute ; le choix final se fait sur le nombre de sommes de contrôle valides (le décalage nul est préféré
+    à score égal).
+    """
+    variants: list[tuple[int, list[str]]] = [(0, group)]
+    count, length = FORMATS[fmt]
+    row = 1  # ligne des dates (TD1 : 2e ligne ; TD2/TD3 : 2e ligne)
+    raw = None
+    for line in source:
+        if _fit(line, length) == group[row]:
+            raw = line
+            break
+    if raw is None:
+        raw = group[row].rstrip("<")
+    for shift in range(-MAX_SHIFT, MAX_SHIFT + 1):
+        if shift == 0:
+            continue
+        moved = raw[shift:] if shift > 0 else "<" * (-shift) + raw
+        if not moved:
+            continue
+        variant = list(group)
+        variant[row] = _fit(moved, length)
+        variants.append((shift, variant))
+    return variants
+
+
 def _plausible(fmt: str, lines: list[str]) -> bool:
     first = lines[0]
     if not first or first[0] not in "PIACVD":
@@ -343,13 +377,14 @@ def find_mrz(text: str) -> tuple[str, list[str]] | None:
     best: tuple[int, int, str, list[str]] | None = None
     for source in (mrz_like, lines):
         for fmt, group, gap in _candidates(source):
-            corrected = _correct(group, fmt)
-            if not _plausible(fmt, corrected):
-                continue
-            score = _check_score(corrected, fmt)
-            key = (score, -gap)
-            if best is None or key > (best[0], best[1]):
-                best = (score, -gap, fmt, corrected)
+            for shift, variant in _shifted(fmt, group, source):
+                corrected = _correct(variant, fmt)
+                if not _plausible(fmt, corrected):
+                    continue
+                score = _check_score(corrected, fmt)
+                key = (score, -gap - abs(shift))
+                if best is None or key > (best[0], best[1]):
+                    best = (score, -gap - abs(shift), fmt, corrected)
         if best is not None:
             break
     if best is None:
@@ -375,6 +410,9 @@ def mrz_date(value: str, kind: str, today: date) -> date | None:
         return None
 
 
+_FILLER_LOOKALIKES = "SKLECZX"
+
+
 def _names(field_value: str) -> tuple[str, str, bool]:
     """« NOM<<PRENOM<SECOND » → (nom, prénoms, tronqué ?) ; séparateur « << » entre nom et prénoms.
 
@@ -390,6 +428,14 @@ def _names(field_value: str) -> tuple[str, str, bool]:
             value = value[:tail.start()].rstrip("<")
             truncated = False
     surname, _, given = value.partition("<<")
+    # Après les prénoms, tout n'est que remplissage : un nouveau « << » marque la fin des prénoms.
+    given = given.split("<<")[0]
+    tokens = [token for token in given.split("<") if token]
+    # Un hologramme sur le remplissage fait lire « < » comme S, K, L, E… : on retire, en fin de champ, les mots
+    # d'une ou deux lettres faites de ces seuls caractères (aucun prénom réel ne s'écrit « S » ou « SS »).
+    while len(tokens) > 1 and len(tokens[-1]) <= 2 and set(tokens[-1]) <= set(_FILLER_LOOKALIKES):
+        tokens.pop()
+    given = "<".join(tokens)
     clean = lambda part: " ".join(p.capitalize() for p in part.replace("<", " ").split() if p)  # noqa: E731
     return clean(surname), clean(given), truncated
 
@@ -971,12 +1017,45 @@ def ocr_image(image: Image.Image, today: date | None = None) -> ExtractionResult
     result = parse_mrz_lines(found[0], found[1], today)
     result.engine = "tesseract"
     result.raw_text = page_text
+    _recover_number_from_page(result, page_text)
     # Le texte de la page complète ce que la MRZ ne contient pas (date de délivrance, noms arabes…).
     for key in ("id_issue_date", "last_name_ar", "first_name_ar"):
         if text_result.fields.get(key) and not result.fields.get(key):
             result.fields[key] = text_result.fields[key]
     result.confidence = round(result.confidence * 0.95, 2)
     return result
+
+
+def _edit_distance(a: str, b: str) -> int:
+    previous = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        current = [i]
+        for j, cb in enumerate(b, 1):
+            current.append(min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (ca != cb)))
+        previous = current
+    return previous[-1]
+
+
+def _recover_number_from_page(result: ExtractionResult, page_text: str) -> None:
+    """Numéro de MRZ abîmé : on cherche sur la page le numéro imprimé en clair qui valide la somme de contrôle.
+
+    Le candidat doit à la fois valider le chiffre de contrôle de la MRZ ET ressembler au numéro lu (au plus trois
+    caractères d'écart), pour ne jamais remplacer le numéro par un autre nombre de la page.
+    """
+    if result.checks.get("document_number", True) or result.format not in ("td3", "td2") or not result.mrz_lines:
+        return
+    line = result.mrz_lines[1]
+    digit, current = line[9], line[0:9].replace("<", "")
+    if not digit.isdigit():
+        return
+    for token in re.findall(r"[A-Z0-9]{6,9}", (page_text or "").upper()):
+        if check_ok(_fit(token, 9), digit) and _edit_distance(token, current) <= 3:
+            result.fields["id_number"] = token
+            result.checks["document_number"] = True
+            result.mrz_lines[1] = _fit(token, 9) + line[9:]
+            result.warnings = [w for w in result.warnings if w != CHECK_WARNINGS["document_number"]]
+            result.warn(MSG_DOC_FROM_PAGE)
+            return
 
 
 def render_pdf_first_page(data: bytes) -> Image.Image | None:

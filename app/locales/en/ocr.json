@@ -93,5 +93,6 @@
   "Image trop grande : 40 mégapixels et 10 000 pixels de côté au maximum.": "Image too large: 40 megapixels and 10,000 pixels per side maximum.",
   "Fiche client créée à partir de la pièce d'identité.": "Guest record created from the ID document.",
   "Fiche client mise à jour à partir de la pièce d'identité.": "Guest record updated from the ID document.",
-  "Scan de la pièce d'identité supprimé.": "ID document scan deleted."
+  "Scan de la pièce d'identité supprimé.": "ID document scan deleted.",
+  "Numéro de document repris du numéro imprimé sur la pièce (MRZ partiellement illisible).": "Document number taken from the number printed on the document (MRZ partly unreadable)."
 }

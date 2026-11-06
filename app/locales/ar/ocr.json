@@ -93,5 +93,6 @@
   "Image trop grande : 40 mégapixels et 10 000 pixels de côté au maximum.": "الصورة كبيرة جداً: 40 ميغابكسل و10000 بكسل للضلع كحد أقصى.",
   "Fiche client créée à partir de la pièce d'identité.": "تم إنشاء بطاقة الزبون من وثيقة الهوية.",
   "Fiche client mise à jour à partir de la pièce d'identité.": "تم تحديث بطاقة الزبون من وثيقة الهوية.",
-  "Scan de la pièce d'identité supprimé.": "تم حذف مسح وثيقة الهوية."
+  "Scan de la pièce d'identité supprimé.": "تم حذف مسح وثيقة الهوية.",
+  "Numéro de document repris du numéro imprimé sur la pièce (MRZ partiellement illisible).": "تم أخذ رقم الوثيقة من الرقم المطبوع عليها (منطقة القراءة الآلية غير مقروءة جزئياً)."
 }

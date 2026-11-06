@@ -668,3 +668,51 @@ def test_tesseract_found_in_standard_windows_folder(monkeypatch, tmp_path):
     assert ocr_service.find_tesseract_cmd() == str(exe)
     monkeypatch.setattr(app_config, "tesseract_cmd", r"D:\OCR\tesseract.exe")
     assert ocr_service.find_tesseract_cmd() == r"D:\OCR\tesseract.exe"
+
+
+# ---------------------------------------------------------------- photo réelle : hologramme, reflets
+def _td3_line2(number, nationality, birth, sex, expiry, optional):
+    from app.services.ocr_service import check_digit
+
+    line = number + check_digit(number) + nationality + birth + check_digit(birth) + sex + expiry + check_digit(expiry)
+    opt = (optional + "<" * 14)[:14]
+    line += opt + check_digit(opt)
+    return line + check_digit(line[0:10] + line[13:20] + line[21:43])
+
+
+_L1 = ("P<DZABENALI<<KARIM" + "<" * 44)[:44]
+_L2 = _td3_line2("123456789", "DZA", "900101", "M", "300505", "X1234")
+
+
+@pytest.mark.parametrize("line2", [_L2[2:], _L2[1:], "<1" + _L2, "Z" + _L2])
+def test_shifted_data_line_is_realigned(line2):
+    """Caractères perdus ou ajoutés en début de 2e ligne (bord de photo, hologramme) : dates retrouvées."""
+    from app.services.ocr_service import parse_mrz
+
+    result = parse_mrz(f"{_L1}\n{line2}", date(2026, 11, 6))
+    assert result.fields["birth_date"] == "1990-01-01"
+    assert result.fields["id_expiry_date"] == "2030-05-05"
+    assert result.fields["gender"] == "M" and result.fields["nationality"] == "Algérienne"
+
+
+def test_filler_misread_as_letters_is_removed_from_given_names():
+    from app.services.ocr_service import parse_mrz
+
+    noisy = ("P<DZABENALI<<KARIM<S<SS" + "<" * 44)[:44]
+    result = parse_mrz(f"{noisy}\n{_L2}", date(2026, 11, 6))
+    assert (result.fields["last_name"], result.fields["first_name"]) == ("Benali", "Karim")
+    two_names = ("P<DZABENALI<<KARIM<AMINE<<K<<" + "<" * 44)[:44]
+    assert parse_mrz(f"{two_names}\n{_L2}", date(2026, 11, 6)).fields["first_name"] == "Karim Amine"
+
+
+def test_number_recovered_from_printed_number_on_page():
+    from app.services.ocr_service import _recover_number_from_page, parse_mrz
+
+    result = parse_mrz(f"{_L1}\n{_L2[2:]}", date(2026, 11, 6))
+    assert not result.checks["document_number"]
+    _recover_number_from_page(result, "PASSEPORT  Type P  Code DZA  N° 123456789\nNom BENALI")
+    assert result.fields["id_number"] == "123456789" and result.checks["document_number"]
+    # Un autre nombre de la page (n° personnel) ne remplace jamais le numéro : il ne valide pas la somme.
+    other = parse_mrz(f"{_L1}\n{_L2[2:]}", date(2026, 11, 6))
+    _recover_number_from_page(other, "N° personnel 109890841056800005")
+    assert not other.checks["document_number"]
