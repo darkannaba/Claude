@@ -818,13 +818,41 @@ OCR_LANGS = ("fra", "ara", "eng")
 MRZ_WHITELIST = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<"
 
 
+def _windows_tesseract_candidates() -> list[Path]:
+    """Emplacements de l'installeur Windows (UB Mannheim) : pour tous les utilisateurs ou pour l'utilisateur courant."""
+    import os  # noqa: PLC0415
+
+    roots = [os.environ.get(name, "") for name in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA")]
+    roots += [r"C:\Program Files", r"C:\Program Files (x86)"]
+    candidates = []
+    for root in roots:
+        if root:
+            base = Path(root) / ("Programs" if root.lower().endswith("appdata\\local") else "")
+            candidates += [Path(root) / "Tesseract-OCR" / "tesseract.exe", base / "Tesseract-OCR" / "tesseract.exe"]
+    return candidates
+
+
+def find_tesseract_cmd() -> str:
+    """Chemin du binaire : TESSERACT_CMD (.env) > PATH > emplacements standard de l'installeur Windows."""
+    if config.tesseract_cmd:
+        return config.tesseract_cmd
+    found = shutil.which("tesseract")
+    if found:
+        return found
+    for candidate in _windows_tesseract_candidates():
+        if candidate.is_file():
+            return str(candidate)
+    return ""
+
+
 def _pytesseract():
     try:
         import pytesseract  # noqa: PLC0415 – dépendance facultative
     except ImportError:
         return None
-    if config.tesseract_cmd:
-        pytesseract.pytesseract.tesseract_cmd = config.tesseract_cmd
+    command = find_tesseract_cmd()
+    if command:
+        pytesseract.pytesseract.tesseract_cmd = command
     return pytesseract
 
 

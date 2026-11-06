@@ -652,3 +652,19 @@ def test_backup_archive_contains_scans(app, reception, no_tesseract):
     archive = backup_manager.build_archive("Test", datetime.now(), "manuelle")
     with zipfile.ZipFile(archive.path) as zf:
         assert backup_manager.MEDIA_PREFIX + relative in zf.namelist()
+
+
+def test_tesseract_found_in_standard_windows_folder(monkeypatch, tmp_path):
+    """Installé avec l'installeur Windows sans toucher au PATH ni au .env : trouvé quand même."""
+    from app.config import config as app_config
+    from app.services import ocr_service
+
+    exe = tmp_path / "Tesseract-OCR" / "tesseract.exe"
+    exe.parent.mkdir()
+    exe.write_bytes(b"")
+    monkeypatch.setattr(app_config, "tesseract_cmd", "")
+    monkeypatch.setattr(ocr_service.shutil, "which", lambda _name: None)
+    monkeypatch.setenv("ProgramFiles", str(tmp_path))
+    assert ocr_service.find_tesseract_cmd() == str(exe)
+    monkeypatch.setattr(app_config, "tesseract_cmd", r"D:\OCR\tesseract.exe")
+    assert ocr_service.find_tesseract_cmd() == r"D:\OCR\tesseract.exe"
